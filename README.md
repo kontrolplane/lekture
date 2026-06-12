@@ -8,23 +8,6 @@
 
 `Lekture` is a terminal user interface (tui) application designed for presenting markdown-based slideshows. It provides an intuitive and efficient way to create and deliver presentations directly from the terminal. With Lekture, you can render markdown with full formatting, display inline images, execute code blocks, and even serve presentations over SSH, making it an essential tool for engineers who prefer working within a terminal environment.
 
-<p align="center">
-  <img width="1500" alt="lekture cassette" src="./assets/cassette.gif">
-</p>
-
-## keybindings
-
-- `q`, `esc`, `ctrl+c`: quit
-- `→`, `l`, `j`, `n`, `space`, `enter`: next slide
-- `←`, `h`, `k`, `p`, `backspace`: previous slide
-- `gg`, `home`: first slide
-- `shift+g`, `end`: last slide
-- `[n]j`: forward n slides
-- `[n]shift+g`: jump to slide n
-- `/`: search (supports regex, `/i` for case-insensitive)
-- `ctrl+n`: next search result
-- `ctrl+e`: execute code block
-
 ## usage
 
 ```bash
@@ -69,6 +52,19 @@ To show the changes made in the repository readme, the following command can be 
 ```bash
 vhs vhs/cassette.tape
 ```
+
+## keybindings
+
+- `q`, `esc`, `ctrl+c`: quit
+- `→`, `l`, `j`, `n`, `space`, `enter`: next slide
+- `←`, `h`, `k`, `p`, `backspace`: previous slide
+- `gg`, `home`: first slide
+- `shift+g`, `end`: last slide
+- `[n]j`: forward n slides
+- `[n]shift+g`: jump to slide n
+- `/`: search (supports regex, `/i` for case-insensitive)
+- `ctrl+n`: next search result
+- `ctrl+e`: execute code block
 
 ## contributors
 
