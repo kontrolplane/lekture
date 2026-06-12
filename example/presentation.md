@@ -4,320 +4,320 @@ date: YYYY-MM-dd
 paging: "%d / %d"
 ---
 
-# AWS Networking Deep Dive
+# aws networking deep dive
 
-### VPC, Route 53, CloudFront & ELB
-
----
-
-## Agenda
-
-1. **VPC** — your private network in the cloud
-2. **Security** — security groups, NACLs, traffic filtering
-3. **Load Balancing** — ALB, NLB, and GLB
-4. **CloudFront** — edge caching and content delivery
-5. **Route 53** — DNS, health checks, routing policies
-6. **Reference Architecture** — tying it all together
-
-> Real CIDR examples, production gotchas, and cost breakdowns throughout.
+### vpc, route 53, cloudfront & elb
 
 ---
 
-## What is a VPC?
+## agenda
 
-Your own logically isolated network inside AWS. Nothing gets in or out unless you allow it.
+1. **vpc** — your private network in the cloud
+2. **security** — security groups, nacls, traffic filtering
+3. **load balancing** — alb, nlb, and glb
+4. **cloudfront** — edge caching and content delivery
+5. **route 53** — dns, health checks, routing policies
+6. **reference architecture** — tying it all together
 
-- Scoped to one **region**, spans all its **availability zones**
-- You pick the **CIDR block**, carve **subnets**, wire up **route tables**
-- Every account gets a default VPC — **never** use it for real workloads
-- Dual-stack: **IPv4**, **IPv6**, or both at once
-
-The VPC itself is free. You pay for what you attach: NAT Gateways, VPN tunnels, Transit Gateway, cross-AZ transfer.
-
-> An intern once exposed an RDS instance on the default VPC. A custom VPC with no IGW on its private subnets would have prevented it entirely.
+> real cidr examples, production gotchas, and cost breakdowns throughout.
 
 ---
 
-## VPC Building Blocks
+## what is a vpc?
 
-| Component            | Role                                       |
+your own logically isolated network inside aws. nothing gets in or out unless you allow it.
+
+- scoped to one **region**, spans all its **availability zones**
+- you pick the **cidr block**, carve **subnets**, wire up **route tables**
+- every account gets a default vpc — **never** use it for real workloads
+- dual-stack: **ipv4**, **ipv6**, or both at once
+
+the vpc itself is free. you pay for what you attach: nat gateways, vpn tunnels, transit gateway, cross-az transfer.
+
+> an intern once exposed an rds instance on the default vpc. a custom vpc with no igw on its private subnets would have prevented it entirely.
+
+---
+
+## vpc building blocks
+
+| component            | role                                       |
 |----------------------|--------------------------------------------|
-| **CIDR Block**       | IP range, e.g. `10.0.0.0/16`               |
-| **Subnet**           | A slice of the range, pinned to one AZ     |
-| **Route Table**      | Decides where packets go next              |
-| **Internet Gateway** | Two-way door to the internet               |
-| **NAT Gateway**      | Outbound-only door for private subnets     |
-| **Security Group**   | Stateful firewall, per-interface           |
-| **NACL**             | Stateless firewall, per-subnet             |
-| **VPC Endpoint**     | Private path to AWS services               |
-| **Peering**          | Direct 1:1 VPC link (non-transitive)       |
-| **Transit Gateway**  | Hub-and-spoke router for many VPCs         |
+| **cidr block**       | ip range, e.g. `10.0.0.0/16`               |
+| **subnet**           | a slice of the range, pinned to one az     |
+| **route table**      | decides where packets go next              |
+| **internet gateway** | two-way door to the internet               |
+| **nat gateway**      | outbound-only door for private subnets     |
+| **security group**   | stateful firewall, per-interface           |
+| **nacl**             | stateless firewall, per-subnet             |
+| **vpc endpoint**     | private path to aws services               |
+| **peering**          | direct 1:1 vpc link (non-transitive)       |
+| **transit gateway**  | hub-and-spoke router for many vpcs         |
 
-> **Watch the NAT bill** — `$0.045/hr` + `$0.045/GB`. A busy subnet runs hundreds a month. Gateway Endpoints for S3 and DynamoDB are free.
-
----
-
-## Subnets in Practice
-
-**Public subnet** — default route `0.0.0.0/0` points to an Internet Gateway.
-
-- Hosts ALBs, bastion hosts, NAT Gateways
-- Instances need a public or Elastic IP to be reachable
-- Set `MapPublicIpOnLaunch` so you don't forget per-instance
-
-**Private subnet** — default route goes to a NAT Gateway, or nowhere.
-
-- Hosts app servers, databases, Lambda, ECS tasks
-- Reaches the internet outbound via NAT for patches and APIs
-- Use free **Gateway Endpoints** for S3/DynamoDB
-
-> Run **three of each** across `eu-west-1a/b/c`. The ALB needs two AZs minimum — three gives every tier AZ-level fault tolerance.
+> **watch the nat bill** — `$0.045/hr` + `$0.045/GB`. a busy subnet runs hundreds a month. gateway endpoints for s3 and dynamodb are free.
 
 ---
 
-## CIDR Planning
+## subnets in practice
 
-Rush this and it bites you later.
+**public subnet** — default route `0.0.0.0/0` points to an internet gateway.
 
-| Block           | Size   | Used For                  |
+- hosts albs, bastion hosts, nat gateways
+- instances need a public or elastic ip to be reachable
+- set `MapPublicIpOnLaunch` so you don't forget per-instance
+
+**private subnet** — default route goes to a nat gateway, or nowhere.
+
+- hosts app servers, databases, lambda, ecs tasks
+- reaches the internet outbound via nat for patches and apis
+- use free **gateway endpoints** for s3/dynamodb
+
+> run **three of each** across `eu-west-1a/b/c`. the alb needs two azs minimum — three gives every tier az-level fault tolerance.
+
+---
+
+## cidr planning
+
+rush this and it bites you later.
+
+| block           | size   | used for                  |
 |-----------------|--------|---------------------------|
-| `10.0.0.0/16`   | 65,536 | The VPC itself            |
-| `10.0.0.0/20`   | 4,096  | Public subnets            |
-| `10.0.48.0/20`  | 4,096  | Private subnets           |
-| `10.0.96.0/20`  | 4,096  | Data tier (RDS, cache)    |
-| `10.0.144.0/20` | 4,096  | Spare — future growth     |
+| `10.0.0.0/16`   | 65,536 | the vpc itself            |
+| `10.0.0.0/20`   | 4,096  | public subnets            |
+| `10.0.48.0/20`  | 4,096  | private subnets           |
+| `10.0.96.0/20`  | 4,096  | data tier (rds, cache)    |
+| `10.0.144.0/20` | 4,096  | spare — future growth     |
 
-- AWS reserves **5 IPs** per subnet (`.0`–`.3` and the last)
-- Ranges span `/16` down to `/28` — nothing larger
-- **You can't shrink or change** a CIDR after creation
-- Avoid `172.17.0.0/16` — Docker's default, it conflicts
-- Peering or going on-prem? CIDRs **must not overlap**
+- aws reserves **5 ips** per subnet (`.0`–`.3` and the last)
+- ranges span `/16` down to `/28` — nothing larger
+- **you can't shrink or change** a cidr after creation
+- avoid `172.17.0.0/16` — docker's default, it conflicts
+- peering or going on-prem? cidrs **must not overlap**
 
 ---
 
-## VPC-Attached Lambda
+## vpc-attached lambda
 
-To reach RDS, ElastiCache, or anything inside a VPC, a Lambda has to run *inside* it. Press `ctrl+e` to see it from the function's perspective:
+to reach rds, elasticache, or anything inside a vpc, a lambda has to run *inside* it. press `ctrl+e` to see it from the function's perspective:
 
 ```go
 package main
 
 import (
-	"fmt"
-	"net"
+  "fmt"
+  "net"
 )
 
 func main() {
-	subnets := []string{"subnet-0a1b2c", "subnet-4e5f6a", "subnet-8c9d0e"}
-	sg := "sg-lambda-private"
+  subnets := []string{"subnet-0a1b2c", "subnet-4e5f6a", "subnet-8c9d0e"}
+  sg := "sg-lambda-private"
 
-	var ip string
-	addrs, _ := net.InterfaceAddrs()
-	for _, a := range addrs {
-		if n, ok := a.(*net.IPNet); ok && !n.IP.IsLoopback() && n.IP.To4() != nil {
-			ip = n.IP.String()
-			break
-		}
-	}
+  var ip string
+  addrs, _ := net.InterfaceAddrs()
+  for _, a := range addrs {
+    if n, ok := a.(*net.IPNet); ok && !n.IP.IsLoopback() && n.IP.To4() != nil {
+      ip = n.IP.String()
+      break
+    }
+  }
 
-	fmt.Println("Lambda VPC Configuration")
-	fmt.Printf("  Private IP:      %s\n", ip)
-	fmt.Printf("  Subnets:         %v\n", subnets)
-	fmt.Printf("  Security Group:  %s\n", sg)
+	fmt.Println("lambda vpc configuration")
+	fmt.Printf("   private ip:      %s\n", ip)
+	fmt.Printf("   subnets:         %v\n", subnets)
+	fmt.Printf("   security group:  %s\n", sg)
 }
 ```
 
 ---
 
-## Security Groups
+## security groups
 
-**Stateful** firewalls on each network interface. Allow traffic in, and the reply is allowed back out automatically.
+**stateful** firewalls on each network interface. allow traffic in, and the reply is allowed back out automatically.
 
-- **Allow rules only** — there is no explicit deny
-- Reference another security group as a source, not just IPs
-- Default: deny all inbound, allow all outbound
-- Limit: 5 SGs per ENI, 60 rules each (raisable to 200)
+- **allow rules only** — there is no explicit deny
+- reference another security group as a source, not just ips
+- default: deny all inbound, allow all outbound
+- limit: 5 sgs per eni, 60 rules each (raisable to 200)
 
-| SG        | Inbound          | Outbound              |
+| sg        | inbound          | outbound              |
 |-----------|------------------|-----------------------|
 | `sg-alb`  | `0.0.0.0/0`:443  | `sg-app`:8080         |
 | `sg-app`  | `sg-alb`:8080    | `sg-db`:5432, `:443`  |
 | `sg-db`   | `sg-app`:5432    | —                     |
 
-> Each tier accepts traffic only from the tier above it — by SG reference, not IP. Move an instance and the rules follow it.
+> each tier accepts traffic only from the tier above it — by sg reference, not ip. move an instance and the rules follow it.
 
 ---
 
-## NACLs — When You Need Them
+## nacls — when you need them
 
-The **stateless** firewall at the subnet level. Most teams never touch them, and that's fine.
+the **stateless** firewall at the subnet level. most teams never touch them, and that's fine.
 
-- Rules have **priority numbers** — lowest wins, first match applies
-- Support **allow *and* deny** — the only way to block an IP in AWS
-- Stateless: allow inbound 443 *and* outbound ephemeral ports (1024–65535) for the reply
-- One per subnet; the default allows everything
+- rules have **priority numbers** — lowest wins, first match applies
+- support **allow *and* deny** — the only way to block an ip in aws
+- stateless: allow inbound 443 *and* outbound ephemeral ports (1024–65535) for the reply
+- one per subnet; the default allows everything
 
-Reach for them only when:
+reach for them only when:
 
-- **Blocking a bad IP range** — SGs can't deny, NACLs can
-- **Compliance** demands subnet-level filtering
-- **Defense in depth** — a coarse outer layer over SGs
+- **blocking a bad ip range** — sgs can't deny, nacls can
+- **compliance** demands subnet-level filtering
+- **defense in depth** — a coarse outer layer over sgs
 
-> No such reason? Stick with security groups. Stateful is far easier to reason about.
+> no such reason? stick with security groups. stateful is far easier to reason about.
 
 ---
 
-## Elastic Load Balancing
+## elastic load balancing
 
-All three sit in your public subnets and forward to private targets.
+all three sit in your public subnets and forward to private targets.
 
-| Type    | Layer | Protocols       | Strength                        |
+| type    | layer | protocols       | strength                        |
 |---------|-------|-----------------|---------------------------------|
-| **ALB** | 7     | HTTP(S), gRPC   | Content routing, sticky sessions|
-| **NLB** | 4     | TCP, UDP, TLS   | Millions of RPS, static IPs     |
-| **GLB** | 3     | IP packets      | Inline firewalls, IDS           |
+| **alb** | 7     | http(s), grpc   | content routing, sticky sessions|
+| **nlb** | 4     | tcp, udp, tls   | millions of rps, static ips     |
+| **glb** | 3     | ip packets      | inline firewalls, ids           |
 
-### ALB
+### alb
 
-- Route by **host**, **path**, **query**, or **method**
-- **Weighted target groups** for canary deploys
-- Native **Cognito** auth and **slow start** ramping
+- route by **host**, **path**, **query**, or **method**
+- **weighted target groups** for canary deploys
+- native **cognito** auth and **slow start** ramping
 
-### NLB
+### nlb
 
-- Preserves client source IP; supports **Elastic IPs**
-- Can front an ALB for static IPs *and* L7 routing
-- **PrivateLink** — expose a service to other VPCs
+- preserves client source ip; supports **elastic ips**
+- can front an alb for static ips *and* l7 routing
+- **privatelink** — expose a service to other vpcs
 
-> Both do cross-zone balancing and connection draining.
+> both do cross-zone balancing and connection draining.
 
 ---
 
-## CloudFront
+## cloudfront
 
-A CDN with 450+ edge locations — not just static files, but APIs, WebSocket, and video too.
+a cdn with 450+ edge locations — not just static files, but apis, websocket, and video too.
 
-### Why bother
+### why bother
 
-- **Latency** — users hit an edge 20ms away, not a region 200ms away
-- **TLS** terminates at the edge, saving a full round trip
-- **Shield Standard** — free DDoS protection, zero config
-- **Cost** — edge transfer beats direct-from-EC2
+- **latency** — users hit an edge 20ms away, not a region 200ms away
+- **tls** terminates at the edge, saving a full round trip
+- **shield standard** — free ddos protection, zero config
+- **cost** — edge transfer beats direct-from-ec2
 
-### S3 origin
+### s3 origin
 
-- **Origin Access Control** keeps the bucket fully private
-- Automatic gzip and brotli compression
+- **origin access control** keeps the bucket fully private
+- automatic gzip and brotli compression
 - `max-age=31536000, immutable` on hashed assets
 
-### ALB origin
+### alb origin
 
-- Forward needed headers via an **origin request policy**
-- Validate a secret header so nobody hits the ALB directly
-- **Origin groups** for cross-region failover
+- forward needed headers via an **origin request policy**
+- validate a secret header so nobody hits the alb directly
+- **origin groups** for cross-region failover
 
-### Functions vs Lambda@Edge
+### functions vs lambda@edge
 
-- **CloudFront Functions** — viewer events, 1ms, JS, dirt cheap
-- **Lambda@Edge** — all events, 30s, Node/Python, powerful
-
----
-
-## What is Route 53?
-
-AWS runs one of the world's largest authoritative DNS networks. Named for port 53.
-
-1. **Domain registration** — buy domains in-console, WHOIS privacy included
-2. **DNS hosting** — anycast hosted zones with a **100% availability SLA** (their only one)
-3. **Health checks & routing** — steer traffic away from failures automatically
-
-> **$0.50/mo** per hosted zone, **$0.40** per million queries. Alias queries to AWS resources are **free**.
+- **cloudfront functions** — viewer events, 1ms, js, dirt cheap
+- **lambda@edge** — all events, 30s, node/python, powerful
 
 ---
 
-## DNS Records That Matter
+## what is route 53?
 
-| Type            | What It Does                          |
+aws runs one of the world's largest authoritative dns networks. named for port 53.
+
+1. **domain registration** — buy domains in-console, whois privacy included
+2. **dns hosting** — anycast hosted zones with a **100% availability sla** (their only one)
+3. **health checks & routing** — steer traffic away from failures automatically
+
+> **$0.50/mo** per hosted zone, **$0.40** per million queries. alias queries to aws resources are **free**.
+
+---
+
+## dns records that matter
+
+| type            | what it does                          |
 |-----------------|---------------------------------------|
-| **A** / **AAAA**| Name → IPv4 / IPv6 address            |
-| **CNAME**       | Name → another name (not at apex)     |
-| **Alias**       | AWS-only: name → an AWS resource      |
-| **MX**          | Routes email to a mail server         |
-| **TXT**         | SPF, DKIM, domain verification        |
-| **SRV**         | Service discovery (port + priority)   |
-| **NS**          | Delegates a subdomain                 |
+| **a** / **aaaa**| name → ipv4 / ipv6 address            |
+| **cname**       | name → another name (not at apex)     |
+| **alias**       | aws-only: name → an aws resource      |
+| **mx**          | routes email to a mail server         |
+| **txt**         | spf, dkim, domain verification        |
+| **srv**         | service discovery (port + priority)   |
+| **ns**          | delegates a subdomain                 |
 
-**Alias vs CNAME** — the one everyone trips on:
+**alias vs cname** — the one everyone trips on:
 
-- **CNAME** maps name → name, and **cannot** sit at the zone apex
-- **Alias** maps the apex → an AWS resource, resolves server-side (faster), and is **free**
+- **cname** maps name → name, and **cannot** sit at the zone apex
+- **alias** maps the apex → an aws resource, resolves server-side (faster), and is **free**
 
-> Pointing at an ALB, CloudFront, S3, or API Gateway? Always use Alias.
-
----
-
-## Routing Policies
-
-DNS as a traffic-management tool.
-
-- **Simple** — one record, one answer, no health checks
-- **Failover** — primary/secondary on a health check
-- **Weighted** — split by percentage; 95% release, 5% canary
-- **Latency** — route to the lowest-latency region automatically
-- **Geolocation** — route by country or continent (great for GDPR)
-- **Geoproximity** — continuous, with a bias to drain regions
-- **Multivalue** — up to 8 healthy IPs; DNS-level balancing
-
-> Flip a canary's weight to 0% the instant error rates spike — no deploy needed.
+> pointing at an alb, cloudfront, s3, or api gateway? always use alias.
 
 ---
 
-## Reference Architecture
+## routing policies
 
-**Route 53 → CloudFront → ALB → ECS** in private subnets.
+dns as a traffic-management tool.
 
-- **Route 53** Alias on `app.example.com` → the CloudFront distribution
-- **CloudFront** terminates TLS at the edge, caches assets, forwards `/api/*`
-- **ALB** in 3 public subnets, validates the `X-CloudFront-Secret` header
-- **ECS Fargate** in 3 private subnets — port 8080 from `sg-alb` only
-- **RDS Aurora** in 3 data subnets — port 5432 from `sg-app` only
-- **NAT Gateway** in one AZ (cost trade-off; three for critical workloads)
-- **Gateway Endpoint** (S3) + **Interface Endpoint** (ECR) keep traffic off NAT
-- **Private Hosted Zone** maps `db.internal` to the Aurora writer
+- **simple** — one record, one answer, no health checks
+- **failover** — primary/secondary on a health check
+- **weighted** — split by percentage; 95% release, 5% canary
+- **latency** — route to the lowest-latency region automatically
+- **geolocation** — route by country or continent (great for gdpr)
+- **geoproximity** — continuous, with a bias to drain regions
+- **multivalue** — up to 8 healthy ips; dns-level balancing
 
-> Total networking cost on this setup: roughly **$120/month**.
+> flip a canary's weight to 0% the instant error rates spike — no deploy needed.
 
 ---
 
-## Private DNS & Hybrid Connectivity
+## reference architecture
 
-### Private Hosted Zones
+**route 53 → cloudfront → alb → ecs** in private subnets.
 
-DNS that resolves only from inside your VPC:
+- **route 53** alias on `app.example.com` → the cloudfront distribution
+- **cloudfront** terminates tls at the edge, caches assets, forwards `/api/*`
+- **alb** in 3 public subnets, validates the `X-CloudFront-Secret` header
+- **ecs fargate** in 3 private subnets — port 8080 from `sg-alb` only
+- **rds aurora** in 3 data subnets — port 5432 from `sg-app` only
+- **nat gateway** in one az (cost trade-off; three for critical workloads)
+- **gateway endpoint** (s3) + **interface endpoint** (ecr) keep traffic off nat
+- **private hosted zone** maps `db.internal` to the aurora writer
+
+> total networking cost on this setup: roughly **$120/month**.
+
+---
+
+## private dns & hybrid connectivity
+
+### private hosted zones
+
+dns that resolves only from inside your vpc:
 
 - `api.internal → 10.0.48.10`
 - `db.internal → 10.0.96.50`
 - `cache.internal → 10.0.96.100`
 
-Associate one zone with multiple VPCs, even **cross-account**.
+associate one zone with multiple vpcs, even **cross-account**.
 
-### Requirements
+### requirements
 
-- `enableDnsSupport` — VPC resolver at `VPC_CIDR + 2` (e.g. `10.0.0.2`)
-- `enableDnsHostnames` — instances get internal DNS names
+- `enableDnsSupport` — vpc resolver at `VPC_CIDR + 2` (e.g. `10.0.0.2`)
+- `enableDnsHostnames` — instances get internal dns names
 
-### Route 53 Resolver (hybrid)
+### route 53 resolver (hybrid)
 
-- **Inbound** — on-prem forwards queries into your AWS zones
-- **Outbound** — VPC forwards `corp.internal` to your DC
-- **Resolver rules** — map suffixes to DNS servers, share via RAM
+- **inbound** — on-prem forwards queries into your aws zones
+- **outbound** — vpc forwards `corp.internal` to your dc
+- **resolver rules** — map suffixes to dns servers, share via ram
 
 ---
 
-# Thank You
+# thank you
 
-### AWS Networking Deep Dive
+### aws networking deep dive
 
 ![levi van noort](image.png)
 
-VPC · security · load balancing · CDN · DNS
+vpc · security · load balancing · cdn · dns

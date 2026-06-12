@@ -12,19 +12,6 @@
   <img width="1500" alt="lekture cassette" src="./assets/cassette.gif">
 </p>
 
-## features
-
-- **markdown rendering** with full formatting support
-- **inline images** rendered as ANSI block characters
-- **code execution** directly from slides
-- **live reload** on file changes
-- **vim-style navigation** with numeric prefixes
-- **search** with regex support
-- **custom themes** via JSON
-- **SSH server** mode for remote presentations
-- **stdin** support for piped content
-- **YAML frontmatter** for slide metadata
-
 ## keybindings
 
 - `q`, `esc`, `ctrl+c`: quit

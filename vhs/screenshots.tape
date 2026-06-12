@@ -3,13 +3,9 @@
 
 Require go
 
-Set Shell "bash"
 Set FontSize 16
-Set Width 1200
-Set Height 700
-Set Theme "Catppuccin Mocha"
-Set WindowBar Colorful
-Set BorderRadius 8
+Set Width 1280
+Set Height 800
 Set Padding 20
 
 # Build and start the presentation
@@ -21,6 +17,8 @@ Show
 
 # -- Screenshot 1: Title slide --
 Sleep 1s
+Right
+Right
 Screenshot assets/pages/slide/overview.png
 Sleep 500ms
 
@@ -30,16 +28,18 @@ Right
 Right
 Right
 Right
-Right
-Right
 Show
 Sleep 1s
+
+# -- Screenshot 2: Code block --
+Screenshot assets/pages/slide/code-block.png
+Sleep 500ms
 
 # Execute code block
 Ctrl+E
 Sleep 4s
 
-# -- Screenshot 2: Code execution --
+# -- Screenshot 3: Code execution --
 Screenshot assets/pages/slide/code-execution.png
 Sleep 500ms
 

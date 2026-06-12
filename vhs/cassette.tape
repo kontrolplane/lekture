@@ -5,17 +5,10 @@ Output assets/cassette.gif
 
 Require go
 
-Set Shell "bash"
 Set FontSize 16
-Set Width 1200
-Set Height 700
-Set TypingSpeed 80ms
-Set Theme "Catppuccin Mocha"
-Set WindowBar Colorful
-Set BorderRadius 8
+Set Width 1280
+Set Height 800
 Set Padding 20
-Set LoopOffset 80%
-Set Framerate 30
 
 # Build and start the presentation
 Hide
@@ -25,92 +18,92 @@ Sleep 2s
 Show
 
 # -- Slide 1: Title --
-Sleep 3s
+Sleep 5s
 
 # -- Slide 2: Agenda --
 Right
-Sleep 3s
+Sleep 5s
 
 # -- Slide 3: What is a VPC? --
 Right
-Sleep 3s
+Sleep 5s
 
 # -- Slide 4: VPC Building Blocks --
 Right
-Sleep 3s
+Sleep 5s
 
 # -- Slide 5: Subnets in Practice --
 Right
-Sleep 3s
+Sleep 5s
 
 # -- Slide 6: CIDR Planning --
 Right
-Sleep 2s
+Sleep 4s
 
 # -- Slide 7: VPC-Attached Lambda --
 Right
-Sleep 2s
+Sleep 4s
 
 # Execute the Go Lambda handler
 Ctrl+E
-Sleep 4s
+Sleep 6s
 
 # Dismiss
 Escape
-Sleep 1s
+Sleep 2s
 
 # -- Slide 8: Security Groups --
 Right
-Sleep 3s
+Sleep 5s
 
 # -- Slide 9: NACLs --
 Right
-Sleep 3s
+Sleep 5s
 
 # -- Slide 10: Elastic Load Balancing --
 Right
-Sleep 3s
+Sleep 5s
 
 # -- Slide 11: CloudFront --
 Right
-Sleep 3s
+Sleep 5s
 
 # -- Slide 12: Route 53 --
 Right
-Sleep 3s
+Sleep 5s
 
 # -- Slide 13: DNS Records --
 Right
-Sleep 3s
+Sleep 5s
 
 # -- Demonstrate search --
 Type "/"
-Sleep 500ms
+Sleep 1s
 Type "subnet"
-Sleep 500ms
+Sleep 1s
 Enter
-Sleep 2s
+Sleep 3s
 
 # Next result
 Ctrl+N
-Sleep 2s
+Sleep 3s
 
 # Dismiss search
 Escape
-Sleep 1s
+Sleep 2s
 
 # -- Vim navigation --
 Type "gg"
-Sleep 2s
+Sleep 3s
 
 Shift+G
-Sleep 2s
+Sleep 3s
 
 Type "10"
-Sleep 300ms
+Sleep 500ms
 Shift+G
-Sleep 2s
+Sleep 3s
 
 # Exit
 Type "q"
-Sleep 1s
+Sleep 2s
