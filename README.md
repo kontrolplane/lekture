@@ -46,6 +46,11 @@ cat presentation.md | lekture
   <img width="2400" alt="lekture slide overview" src="./assets/pages/slide/overview.png">
 </p>
 
+`code blocks with syntax highlighting`
+<p align="center">
+  <img width="2400" alt="lekture code block" src="./assets/pages/slide/code-block.png">
+</p>
+
 `code execution`
 <p align="center">
   <img width="2400" alt="lekture code execution" src="./assets/pages/slide/code-execution.png">
