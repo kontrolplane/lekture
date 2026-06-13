@@ -22,6 +22,18 @@ lekture serve <presentation.md> [--port PORT] [--host HOST]
 cat presentation.md | lekture
 ```
 
+## themes
+
+by default `lekture` renders with the classic glamour dark palette. point a presentation's frontmatter at a path or url to a glamour-compatible json theme to override it:
+
+```yaml
+---
+theme: themes/kontrolplane.json
+---
+```
+
+two themes are bundled: `default.json` (the built-in classic look) and `kontrolplane.json` — navy ink, cream paper, and a goldenrod accent. local paths resolve relative to the presentation file; `http(s)` urls are fetched. heading color can be tuned independently via `headingColor` (defaults to `#a6da95`; pair the kontrolplane theme with `headingColor: "#F4E8C1"`).
+
 ## demonstration
 
 `slide overview`

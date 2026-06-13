@@ -2,6 +2,7 @@
 author: levi van noort
 date: YYYY-MM-dd
 paging: "%d / %d"
+headingColor: "#F4E8C1"
 ---
 
 # aws networking deep dive
