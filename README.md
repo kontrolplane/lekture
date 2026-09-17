@@ -1,12 +1,10 @@
 <p align="center">
-  <h1 align="center">
-    <a href="https://kontrolplane.dev">
-      <img width="1500" alt="kontrolplane header" src="./assets/kontrolplane-header.svg">
-    </a>
-  </h1>
+  <a href="https://kontrolplane.dev">
+    <img width="400" alt="kontrolplane header" src="./assets/kontrolplane-header.svg">
+  </a>
 </p>
 
-`Lekture` is a terminal user interface (tui) application designed for presenting markdown-based slideshows. It provides an intuitive and efficient way to create and deliver presentations directly from the terminal. With Lekture, you can render markdown with full formatting, display inline images, reveal a slide in stages, execute code blocks, serve presentations over SSH, and export a deck to a self-contained html file, making it an essential tool for engineers who prefer working within a terminal environment.
+`lekture` is a terminal user interface (tui) application designed for presenting markdown-based slideshows. It provides an intuitive and efficient way to create and deliver presentations directly from the terminal. With Lekture, you can render markdown with full formatting, display inline images, reveal a slide in stages, execute code blocks, serve presentations over SSH, and export a deck to a self-contained html file, making it an essential tool for engineers who prefer working within a terminal environment.
 
 ## installation
 
