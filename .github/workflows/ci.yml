@@ -13,9 +13,9 @@ jobs:
     name: build, vet, test
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
           cache: true
@@ -42,9 +42,12 @@ jobs:
     name: govulncheck
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
+      # Runs against the toolchain declared in go.mod, so the go directive is
+      # a verified claim: building at the stated minimum is free of known
+      # vulnerabilities, including ones fixed only by a newer stdlib.
       - name: Scan for vulnerabilities
         run: go run golang.org/x/vuln/cmd/govulncheck@latest ./...

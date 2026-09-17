@@ -1,6 +1,6 @@
 module github.com/kontrolplane/lekture
 
-go 1.26.0
+go 1.26.6
 
 require (
 	github.com/alecthomas/chroma/v2 v2.20.0
