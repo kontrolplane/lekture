@@ -3,6 +3,7 @@ package exec
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -18,10 +19,24 @@ type Result struct {
 	Err    error
 }
 
+// Timeout caps how long a code block may run.
+const Timeout = 10 * time.Second
+
+// Languages lists the supported language identifiers, for error messages.
+var Languages = []string{
+	"bash", "c", "elixir", "go", "javascript", "lua", "python", "ruby", "rust",
+}
+
 // Run executes a code block in the given language and returns its combined
-// stdout/stderr output. Execution is capped at 10 seconds.
+// stdout/stderr output. Execution is capped at Timeout.
 func Run(language, code string) Result {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	return RunContext(context.Background(), language, code)
+}
+
+// RunContext is Run with a caller-supplied context, so an in-flight execution
+// can be cancelled (e.g. when the user dismisses the output panel).
+func RunContext(parent context.Context, language, code string) Result {
+	ctx, cancel := context.WithTimeout(parent, Timeout)
 	defer cancel()
 
 	switch strings.ToLower(language) {
@@ -44,15 +59,25 @@ func Run(language, code string) Result {
 	case "rust", "rs":
 		return runRust(ctx, code)
 	default:
-		return Result{Err: fmt.Errorf("unsupported language: %s", language)}
+		if language == "" {
+			return Result{Err: fmt.Errorf("code block has no language (supported: %s)", strings.Join(Languages, ", "))}
+		}
+		return Result{Err: fmt.Errorf("unsupported language %q (supported: %s)", language, strings.Join(Languages, ", "))}
 	}
 }
 
 // runInterpreted passes code via stdin to an interpreter.
 func runInterpreted(ctx context.Context, code, interpreter string) Result {
+	dir, err := os.MkdirTemp("", "lekture-exec-*")
+	if err != nil {
+		return Result{Err: err}
+	}
+	defer os.RemoveAll(dir)
+
 	cmd := exec.CommandContext(ctx, interpreter)
+	cmd.Dir = dir
 	cmd.Stdin = strings.NewReader(code)
-	return capture(cmd)
+	return capture(ctx, cmd)
 }
 
 // runFile writes code to a temp file and runs it with the given command.
@@ -71,7 +96,7 @@ func runFile(ctx context.Context, code, filename string, args ...string) Result 
 	cmdArgs := append(args, path)
 	cmd := exec.CommandContext(ctx, cmdArgs[0], cmdArgs[1:]...)
 	cmd.Dir = dir
-	return capture(cmd)
+	return capture(ctx, cmd)
 }
 
 // runC compiles and runs a C program.
@@ -98,7 +123,7 @@ func runC(ctx context.Context, code string) Result {
 	// Run
 	cmd := exec.CommandContext(ctx, bin)
 	cmd.Dir = dir
-	return capture(cmd)
+	return capture(ctx, cmd)
 }
 
 // runRust compiles and runs a Rust program via rustc.
@@ -123,22 +148,34 @@ func runRust(ctx context.Context, code string) Result {
 
 	cmd := exec.CommandContext(ctx, bin)
 	cmd.Dir = dir
-	return capture(cmd)
+	return capture(ctx, cmd)
 }
 
 // maxOutputBytes limits captured output to prevent OOM from runaway programs.
 const maxOutputBytes = 1 << 20 // 1 MiB
 
-func capture(cmd *exec.Cmd) Result {
+func capture(ctx context.Context, cmd *exec.Cmd) Result {
 	var buf bytes.Buffer
 	limited := &limitedWriter{w: &buf, remaining: maxOutputBytes}
 	cmd.Stdout = limited
 	cmd.Stderr = limited
+
+	// Run the child in its own process group and kill the whole group on
+	// cancellation. CommandContext otherwise kills only the direct child, so
+	// a process it spawned ("go run" builds and runs a second binary) would
+	// survive the timeout and keep the output pipe open indefinitely.
+	setProcessGroup(cmd)
+	cmd.Cancel = func() error { return killGroup(cmd) }
+	cmd.WaitDelay = time.Second
+
 	err := cmd.Run()
 
 	output := buf.String()
 	if limited.truncated {
 		output += "\n\n(output truncated)"
+	}
+	if ctx.Err() != nil && errors.Is(ctx.Err(), context.DeadlineExceeded) {
+		err = fmt.Errorf("execution timed out after %s", Timeout)
 	}
 	return Result{Output: output, Err: err}
 }
@@ -150,16 +187,26 @@ type limitedWriter struct {
 	truncated bool
 }
 
+// Write always reports the full length as consumed. Reporting a short write
+// with a nil error violates the io.Writer contract: io.Copy turns it into
+// io.ErrShortWrite and closes the pipe, which kills the child process.
 func (lw *limitedWriter) Write(p []byte) (int, error) {
+	if len(p) == 0 {
+		return 0, nil
+	}
 	if lw.remaining <= 0 {
 		lw.truncated = true
-		return len(p), nil // discard but don't error so the process keeps running
+		return len(p), nil // discard, but let the process keep running
 	}
-	if len(p) > lw.remaining {
-		p = p[:lw.remaining]
+	keep := p
+	if len(keep) > lw.remaining {
+		keep = keep[:lw.remaining]
 		lw.truncated = true
 	}
-	n, err := lw.w.Write(p)
+	n, err := lw.w.Write(keep)
 	lw.remaining -= n
-	return n, err
+	if err != nil {
+		return n, err
+	}
+	return len(p), nil
 }
