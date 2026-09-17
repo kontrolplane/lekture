@@ -1,5 +1,8 @@
 # Lekture — terminal-based presentation tool
 # Generates the main demo GIF for the README.
+#
+# Right advances a reveal before it advances a slide, so slides with
+# "<!-- pause -->" markers take more than one press.
 
 Output assets/cassette.gif
 
@@ -17,66 +20,68 @@ Enter
 Sleep 2s
 Show
 
-# -- Slide 1: Title --
-Sleep 5s
+# -- Slide 1: title --
+Sleep 4s
 
-# -- Slide 2: Agenda --
+# -- Slide 2: agenda, revealed in three stages --
+Right
+Sleep 2500ms
+Right
+Sleep 2500ms
+Right
+Sleep 3s
+
+# -- Slide 3: how this deck is written --
 Right
 Sleep 5s
 
-# -- Slide 3: What is a VPC? --
-Right
-Sleep 5s
-
-# -- Slide 4: VPC Building Blocks --
-Right
-Sleep 5s
-
-# -- Slide 5: Subnets in Practice --
-Right
-Sleep 5s
-
-# -- Slide 6: CIDR Planning --
+# -- Slide 4: what is a vpc? --
 Right
 Sleep 4s
 
-# -- Slide 7: VPC-Attached Lambda --
+# -- Slide 5: vpc building blocks --
 Right
 Sleep 4s
 
-# Execute the Go Lambda handler
-Ctrl+E
-Sleep 6s
+# -- Slide 6: subnets in practice --
+Right
+Sleep 3s
 
-# Dismiss
-Escape
+# -- Slide 7: cidr planning --
+Right
+Sleep 3s
+
+# -- Slide 8: vpc-attached lambda, two runnable blocks --
+Right
+Sleep 4s
+
+# Pick the second block, then run the first
+Tab
 Sleep 2s
+Tab
+Sleep 1500ms
 
-# -- Slide 8: Security Groups --
-Right
+# Execute the Go handler
+Ctrl+E
 Sleep 5s
+Escape
+Sleep 1500ms
 
-# -- Slide 9: NACLs --
+# -- Slides 9 to 14 --
 Right
-Sleep 5s
-
-# -- Slide 10: Elastic Load Balancing --
+Sleep 3s
 Right
-Sleep 5s
-
-# -- Slide 11: CloudFront --
+Sleep 3s
 Right
-Sleep 5s
-
-# -- Slide 12: Route 53 --
+Sleep 3s
 Right
-Sleep 5s
-
-# -- Slide 13: DNS Records --
+Sleep 3s
 Right
-Sleep 5s
+Sleep 3s
+Right
+Sleep 3s
 
-# -- Demonstrate search --
+# -- Search --
 Type "/"
 Sleep 1s
 Type "subnet"
@@ -84,20 +89,26 @@ Sleep 1s
 Enter
 Sleep 3s
 
-# Next result
+# Next and previous match
 Ctrl+N
-Sleep 3s
-
-# Dismiss search
+Sleep 2500ms
+Ctrl+P
+Sleep 2500ms
 Escape
-Sleep 2s
+Sleep 1500ms
+
+# -- Keymap overlay --
+Type "?"
+Sleep 4s
+Escape
+Sleep 1s
 
 # -- Vim navigation --
 Type "gg"
-Sleep 3s
+Sleep 2500ms
 
 Shift+G
-Sleep 3s
+Sleep 2500ms
 
 Type "10"
 Sleep 500ms

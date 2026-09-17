@@ -3,6 +3,8 @@ author: levi van noort
 date: YYYY-MM-dd
 paging: "%d / %d"
 headingColor: "#F4E8C1"
+# theme: kontrolplane   # a bundled theme, resolved by name from anywhere
+# align: center         # or the default, top-left
 ---
 
 # aws networking deep dive
@@ -15,12 +17,48 @@ headingColor: "#F4E8C1"
 
 1. **vpc** — your private network in the cloud
 2. **security** — security groups, nacls, traffic filtering
+
+<!-- pause -->
+
 3. **load balancing** — alb, nlb, and glb
 4. **cloudfront** — edge caching and content delivery
+
+<!-- pause -->
+
 5. **route 53** — dns, health checks, routing policies
 6. **reference architecture** — tying it all together
 
 > real cidr examples, production gotchas, and cost breakdowns throughout.
+
+---
+
+## how this deck is written
+
+plain markdown in one file. slides are split on a line of three dashes:
+
+```markdown
+---
+author: levi van noort
+paging: "%d / %d"
+headingColor: "#F4E8C1"
+---
+
+# first slide
+
+---
+
+## second slide
+
+- shown straight away
+
+<!-- pause -->
+
+- revealed on the next keypress
+```
+
+- a `---` **inside** a fenced block is content, not a separator — that is why this slide holds together
+- `<!-- pause -->` reveals a slide in stages; the counter shows `(2/3)`
+- press `?` at any time for the full keymap
 
 ---
 
@@ -103,29 +141,23 @@ to reach rds, elasticache, or anything inside a vpc, a lambda has to run *inside
 ```go
 package main
 
-import (
-  "fmt"
-  "net"
-)
+import "fmt"
 
 func main() {
-  subnets := []string{"subnet-0a1b2c", "subnet-4e5f6a", "subnet-8c9d0e"}
-  sg := "sg-lambda-private"
-
-  var ip string
-  addrs, _ := net.InterfaceAddrs()
-  for _, a := range addrs {
-    if n, ok := a.(*net.IPNet); ok && !n.IP.IsLoopback() && n.IP.To4() != nil {
-      ip = n.IP.String()
-      break
-    }
-  }
+	subnets := []string{"subnet-0a1b2c", "subnet-4e5f6a", "subnet-8c9d0e"}
+	sg := "sg-lambda-private"
 
 	fmt.Println("lambda vpc configuration")
-	fmt.Printf("   private ip:      %s\n", ip)
 	fmt.Printf("   subnets:         %v\n", subnets)
 	fmt.Printf("   security group:  %s\n", sg)
+	fmt.Printf("   enis attached:   %d (one per subnet)\n", len(subnets))
 }
+```
+
+more than one runnable block? press `tab` to choose which `ctrl+e` runs:
+
+```bash
+echo "cold start: one eni per subnet, reused across invocations"
 ```
 
 ---
