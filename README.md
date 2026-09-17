@@ -1,6 +1,6 @@
 <p align="center">
   <a href="https://kontrolplane.dev">
-    <img width="400" alt="kontrolplane header" src="./assets/kontrolplane-header.svg">
+    <img alt="kontrolplane header" src="./assets/kontrolplane-header.svg">
   </a>
 </p>
 
