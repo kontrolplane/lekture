@@ -7,7 +7,7 @@ COMMIT  := $(shell git rev-parse --short HEAD 2>/dev/null || echo none)
 DATE    := $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
 LDFLAGS := -s -w -X main.version=$(VERSION) -X main.commit=$(COMMIT) -X main.date=$(DATE)
 
-.PHONY: build run clean tidy test race fmt vet check check-vhs gif screenshots assets
+.PHONY: build run clean tidy test race fmt vet check check-vhs release-check release-snapshot gif screenshots assets
 
 build:
 	$(GO) build -ldflags "$(LDFLAGS)" -o $(BINARY_NAME) .
@@ -17,6 +17,7 @@ run: build
 
 clean:
 	rm -f $(BINARY_NAME)
+	rm -rf dist
 
 tidy:
 	$(GO) mod tidy
@@ -51,6 +52,14 @@ check-vhs:
 		echo "install a working release: go install github.com/charmbracelet/vhs@v0.11.0"; \
 		exit 1; \
 	} || true
+
+# release-check validates .goreleaser.yaml; release-snapshot builds the full
+# set of archives locally without publishing anything.
+release-check:
+	goreleaser check
+
+release-snapshot:
+	goreleaser release --snapshot --clean
 
 gif: check-vhs
 	$(VHS) vhs/cassette.tape

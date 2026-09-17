@@ -1,0 +1,97 @@
+# Release configuration. Run "make release-check" to validate, or
+# "goreleaser release --snapshot --clean" to build locally without publishing.
+version: 2
+
+project_name: lekture
+
+before:
+  hooks:
+    - go mod tidy
+    - go test ./...
+
+builds:
+  - id: lekture
+    main: .
+    binary: lekture
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w
+      - -X main.version={{ .Version }}
+      - -X main.commit={{ .Commit }}
+      - -X main.date={{ .CommitDate }}
+    # Reproducible builds: stamp the commit date rather than the build time.
+    mod_timestamp: "{{ .CommitTimestamp }}"
+
+archives:
+  - id: lekture
+    ids:
+      - lekture
+    formats:
+      - tar.gz
+    format_overrides:
+      - goos: windows
+        formats:
+          - zip
+    name_template: >-
+      {{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}
+    files:
+      - README.md
+      - src: example/presentation.md
+        dst: example
+
+checksum:
+  name_template: checksums.txt
+
+changelog:
+  sort: asc
+  use: github
+  groups:
+    - title: Features
+      regexp: '^feat'
+      order: 0
+    - title: Fixes
+      regexp: '^(fix|perf)'
+      order: 1
+    - title: Other
+      order: 99
+  filters:
+    exclude:
+      - '^docs:'
+      - '^test:'
+      - '^ci:'
+      - '^chore: update dependencies'
+
+release:
+  draft: false
+  prerelease: auto
+  footer: |
+    ## installation
+
+    ```bash
+    go install github.com/kontrolplane/lekture@{{ .Tag }}
+    ```
+
+    Or download a binary for your platform from the assets below.
+
+# Homebrew is deliberately not configured yet: it needs a
+# kontrolplane/homebrew-tap repository and a HOMEBREW_TAP_GITHUB_TOKEN
+# secret, and publishing a formula for a private repository would produce a
+# tap nobody outside the org could install from. Once the repository is
+# public and the tap exists, add:
+#
+# brews:
+#   - repository:
+#       owner: kontrolplane
+#       name: homebrew-tap
+#       token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
+#     homepage: https://github.com/kontrolplane/lekture
+#     description: Present markdown slideshows in the terminal
+#     license: MIT
