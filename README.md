@@ -1,6 +1,6 @@
 <p align="center">
   <a href="https://kontrolplane.dev">
-    <img alt="kontrolplane header" src="./assets/kontrolplane-header.svg">
+    <img width="1500" alt="kontrolplane lekture" src="./assets/kontrolplane-header.svg">
   </a>
 </p>
 
@@ -9,10 +9,16 @@
 ## installation
 
 ```bash
+brew install kontrolplane/tap/lekture
+```
+
+or with go, which requires [go](https://go.dev/) 1.26 or later:
+
+```bash
 go install github.com/kontrolplane/lekture@latest
 ```
 
-requires [go](https://go.dev/) 1.26 or later. alternatively, clone the repository and run `make build`.
+alternatively, clone the repository and run `make build`.
 
 ## usage
 
@@ -237,5 +243,5 @@ code execution supports go, python, javascript, ruby, lua, elixir, bash, c, and 
 </br>
 
 <p align="center">
-  <img width="1500" alt="kontrolplane footer" src="./assets/kontrolplane-footer.svg">
+  <img width="1500" alt="" src="./assets/kontrolplane-footer.svg">
 </p>

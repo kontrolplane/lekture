@@ -24,6 +24,18 @@ jobs:
           go-version-file: go.mod
           cache: true
 
+      # GITHUB_TOKEN is scoped to this repository, so the cask push to the
+      # tap goes through the kontrolplane-bot app instead.
+      - name: Create tap token
+        id: tap-token
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ vars.KONTROLPLANE_BOT_CLIENT_ID }}
+          private-key: ${{ secrets.KONTROLPLANE_BOT_PRIVATE_KEY }}
+          owner: kontrolplane
+          repositories: homebrew-tap
+          permission-contents: write
+
       - name: Run goreleaser
         uses: goreleaser/goreleaser-action@v7
         with:
@@ -31,3 +43,4 @@ jobs:
           args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          HOMEBREW_TAP_GITHUB_TOKEN: ${{ steps.tap-token.outputs.token }}
