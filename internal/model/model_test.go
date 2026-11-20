@@ -6,6 +6,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/kontrolplane/lekture/internal/meta"
 	"github.com/kontrolplane/lekture/internal/parser"
 )
@@ -446,4 +447,55 @@ func TestRevealClampedAfterReload(t *testing.T) {
 	if m.View() == "" {
 		t.Error("expected a rendered view")
 	}
+}
+
+func TestTrimToContentDropsPaddingAndSharedIndent(t *testing.T) {
+	in := strings.Join([]string{
+		"          ",
+		"  \x1b[1mtitle\x1b[0m          ",
+		"                    ",
+		"    a longer line   ",
+		"  short             ",
+		"   ",
+	}, "\n")
+	got := strings.Split(trimToContent(in), "\n")
+	want := []string{"title", "", "  a longer line", "short"}
+	if len(got) != len(want) {
+		t.Fatalf("got %d lines %q, want %d", len(got), got, len(want))
+	}
+	for i := range want {
+		// Lines may keep padding up to the width of the widest one.
+		if plain := strings.TrimRight(ansi.Strip(got[i]), " "); plain != want[i] {
+			t.Errorf("line %d = %q, want %q", i, plain, want[i])
+		}
+	}
+	if !strings.Contains(got[0], "\x1b[1m") {
+		t.Errorf("styling was lost: %q", got[0])
+	}
+}
+
+func TestTrimToContentLeavesBlankSlideAlone(t *testing.T) {
+	if got := trimToContent("   \n  "); got != "   \n  " {
+		t.Errorf("blank input changed to %q", got)
+	}
+}
+
+// A slide with short lines must sit in the middle of a wide terminal: the
+// space left of the text and right of it may differ by at most one cell.
+func TestCenterAlignCentersVisibleContent(t *testing.T) {
+	m := New(parser.ParseContent("short\n"), t.TempDir(), meta.Meta{Align: "center", Paging: "%d / %d", HeadingColor: "#a6da95"}).WithSize(160, 30)
+	view := m.View()
+	for _, line := range strings.Split(view, "\n") {
+		plain := ansi.Strip(line)
+		if !strings.Contains(plain, "short") {
+			continue
+		}
+		left := len(plain) - len(strings.TrimLeft(plain, " "))
+		right := len(plain) - len(strings.TrimRight(plain, " "))
+		if d := left - right; d < -1 || d > 1 {
+			t.Fatalf("left margin %d, right margin %d: not centered", left, right)
+		}
+		return
+	}
+	t.Fatal("slide text not found in view")
 }

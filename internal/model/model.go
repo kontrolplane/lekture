@@ -802,6 +802,14 @@ func (m Model) View() string {
 		}
 	}
 
+	if hPos == lipgloss.Center && !m.execVisible && !m.helpVisible {
+		// The renderer pads every line to the wrap width, which is a fraction
+		// of the terminal. Centering that padded block leaves a slide with
+		// short lines visibly left of center on a wide terminal, so center
+		// what is actually drawn instead.
+		rendered = trimToContent(rendered)
+	}
+
 	content := lipgloss.Place(m.width, contentHeight-pad, hPos, vPos, rendered)
 	if pad > 0 {
 		content = strings.Repeat("\n", pad) + content
@@ -838,4 +846,51 @@ func (m Model) View() string {
 	}
 
 	return content + "\n" + statusLine
+}
+
+// trimToContent shrinks a rendered slide to the box its visible text occupies:
+// it drops blank lines above and below, the indentation every line shares,
+// and the trailing padding. Lines keep their position relative to each other,
+// so left-aligned text stays left-aligned inside the box.
+func trimToContent(s string) string {
+	lines := strings.Split(s, "\n")
+	plain := make([]string, len(lines))
+	for i, line := range lines {
+		plain[i] = strings.TrimRight(ansi.Strip(line), " ")
+	}
+
+	first, last := 0, len(lines)-1
+	for first <= last && plain[first] == "" {
+		first++
+	}
+	for last >= first && plain[last] == "" {
+		last--
+	}
+	if first > last {
+		return s
+	}
+	lines, plain = lines[first:last+1], plain[first:last+1]
+
+	indent, width := -1, 0
+	for _, p := range plain {
+		if p == "" {
+			continue
+		}
+		if lead := len(p) - len(strings.TrimLeft(p, " ")); indent < 0 || lead < indent {
+			indent = lead
+		}
+		if w := lipgloss.Width(p); w > width {
+			width = w
+		}
+	}
+
+	for i, line := range lines {
+		if plain[i] == "" {
+			lines[i] = ""
+			continue
+		}
+		line = ansi.Truncate(line, width, "")
+		lines[i] = ansi.TruncateLeft(line, indent, "")
+	}
+	return strings.Join(lines, "\n")
 }
