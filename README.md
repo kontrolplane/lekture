@@ -39,6 +39,10 @@ lekture export <presentation.md> [--output deck.html]
 ```
 
 ```bash
+lekture window <presentation.md> [--columns N]
+```
+
+```bash
 cat presentation.md | lekture
 ```
 
@@ -56,6 +60,15 @@ cat presentation.md | lekture -
 lekture dump presentation.md | less -R
 lekture dump presentation.md --width 100 > deck.txt
 ```
+
+`lekture window` opens the deck in a fullscreen terminal window of its own, with the font sized so the slides fill the screen:
+
+```bash
+lekture window presentation.md
+lekture window presentation.md --columns 90
+```
+
+a terminal cannot scale text, so a slide only gets bigger when the font does. `window` opens a window at a known font size to measure the screen (it flashes for a moment), then opens the deck at the font size that makes the screen `--columns` cells wide: 100 by default, and fewer columns means bigger text. it works this out on every run, so the same command fits a laptop and a projector. the deck runs in a login shell from the directory you ran `lekture window` in, so code blocks find the same commands your terminal does, and the window closes when you quit. it needs [ghostty](https://ghostty.org) on macos; elsewhere it says so and you can run `lekture` in a terminal of about that width.
 
 `lekture export` writes a self-contained html document — no external stylesheets, scripts, fonts, or images, with pictures embedded and code syntax-highlighted — for sharing a deck with people who will not run a terminal:
 
