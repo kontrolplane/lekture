@@ -499,3 +499,72 @@ func TestCenterAlignCentersVisibleContent(t *testing.T) {
 	}
 	t.Fatal("slide text not found in view")
 }
+
+// markedLines returns the plain text of the view lines that carry the
+// selection marker.
+func markedLines(view string) []string {
+	var out []string
+	for _, line := range strings.Split(view, "\n") {
+		if plain := ansi.Strip(line); strings.Contains(plain, selectionMarker) {
+			out = append(out, strings.TrimSpace(strings.Replace(plain, selectionMarker, "", 1)))
+		}
+	}
+	return out
+}
+
+func TestSelectedBlockIsMarkedAndFollowsTab(t *testing.T) {
+	md := "# a\n\n```bash\necho one\n```\n\ntext between\n\n```bash\necho two \\\\\n  --flag\n```\n"
+	m := New(parser.ParseContent(md), t.TempDir(), meta.Meta{Paging: "%d/%d", Align: "top-left", HeadingColor: "#a6da95"}).WithSize(80, 24)
+
+	if got := markedLines(m.View()); len(got) != 1 || got[0] != "echo one" {
+		t.Fatalf("first block should be marked, got %q", got)
+	}
+	m = send(m, "tab")
+	got := markedLines(m.View())
+	if len(got) != 2 || !strings.HasPrefix(got[0], "echo two") || got[1] != "--flag" {
+		t.Fatalf("every line of the second block should be marked, got %q", got)
+	}
+}
+
+func TestSingleBlockIsNotMarked(t *testing.T) {
+	md := "# a\n\n```bash\necho one\n```\n"
+	m := New(parser.ParseContent(md), t.TempDir(), meta.Meta{Paging: "%d/%d", Align: "top-left", HeadingColor: "#a6da95"}).WithSize(80, 24)
+	if got := markedLines(m.View()); len(got) != 0 {
+		t.Fatalf("a lone block needs no marker, got %q", got)
+	}
+}
+
+func TestIdenticalBlocksAreToldApartByPosition(t *testing.T) {
+	md := "# a\n\n```bash\necho same\n```\n\nmiddle\n\n```bash\necho same\n```\n"
+	m := New(parser.ParseContent(md), t.TempDir(), meta.Meta{Paging: "%d/%d", Align: "top-left", HeadingColor: "#a6da95"}).WithSize(80, 24)
+	lineOf := func(view string) int {
+		for i, line := range strings.Split(view, "\n") {
+			if strings.Contains(ansi.Strip(line), selectionMarker) {
+				return i
+			}
+		}
+		return -1
+	}
+	before := lineOf(m.View())
+	after := lineOf(send(m, "tab").View())
+	if before < 0 || after <= before {
+		t.Fatalf("marker should move down to the second block: line %d, then %d", before, after)
+	}
+}
+
+func TestMarkerDoesNotMoveTheCode(t *testing.T) {
+	md := "# a\n\n```bash\necho one\n```\n\n```bash\necho two\n```\n"
+	m := New(parser.ParseContent(md), t.TempDir(), meta.Meta{Paging: "%d/%d", Align: "top-left", HeadingColor: "#a6da95"}).WithSize(80, 24)
+	col := func(view, text string) int {
+		for _, line := range strings.Split(view, "\n") {
+			if plain := ansi.Strip(line); strings.Contains(plain, text) {
+				return lipgloss.Width(plain[:strings.Index(plain, text)])
+			}
+		}
+		return -1
+	}
+	marked, unmarked := col(m.View(), "echo one"), col(send(m, "tab").View(), "echo one")
+	if marked < 0 || marked != unmarked {
+		t.Fatalf("code column changed with the marker: %d marked, %d unmarked", marked, unmarked)
+	}
+}
