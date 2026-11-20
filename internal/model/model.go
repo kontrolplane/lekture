@@ -718,7 +718,93 @@ func (m Model) renderContent() string {
 	if err != nil {
 		return fmt.Sprintf("Error rendering slide: %v", err)
 	}
+	// With more than one block on the slide, show which one ctrl+e will run.
+	if blocks := m.slides[m.current].CodeBlocks; m.allowExec && len(blocks) > 1 {
+		marker := lipgloss.NewStyle().Foreground(lipgloss.Color(m.meta.HeadingColor)).Render(selectionMarker)
+		output = markSelectedBlock(output, blocks, m.execBlockIdx, marker)
+	}
 	return output
+}
+
+// selectionMarker is drawn in the margin beside the selected code block.
+const selectionMarker = "▌"
+
+// markSelectedBlock draws marker in the left margin of every rendered line of
+// the selected code block. It finds the blocks by walking the rendered slide
+// in order and matching each source line of each block, so identical blocks
+// on one slide are told apart by position. A block that cannot be found (it
+// is behind a pause, or the renderer reshaped it) is left unmarked: the
+// status bar still reports the selection.
+func markSelectedBlock(rendered string, blocks []parser.CodeBlock, selected int, marker string) string {
+	if selected < 0 || selected >= len(blocks) {
+		return rendered
+	}
+	lines := strings.Split(rendered, "\n")
+	plain := make([]string, len(lines))
+	for i, line := range lines {
+		plain[i] = ansi.Strip(line)
+	}
+
+	cursor := 0
+	first, last := -1, -1
+	for b, block := range blocks {
+		start, end := -1, -1
+		for _, src := range strings.Split(block.Code, "\n") {
+			want := strings.TrimSpace(strings.ReplaceAll(src, "\t", "    "))
+			if want == "" {
+				continue
+			}
+			at := -1
+			for i := cursor; i < len(plain); i++ {
+				got := strings.TrimSpace(plain[i])
+				// A long line is hard-wrapped by the renderer, so the
+				// rendered line may hold only the start of the source line.
+				if got != "" && (got == want || strings.HasPrefix(want, got)) {
+					at = i
+					break
+				}
+			}
+			if at < 0 {
+				return rendered
+			}
+			if start < 0 {
+				start = at
+			}
+			end = at
+			cursor = at + 1
+		}
+		if b == selected {
+			first, last = start, end
+			break
+		}
+	}
+	if first < 0 {
+		return rendered
+	}
+
+	// The marker goes in the code block's own margin, two cells left of its
+	// least indented line, so the code itself does not move.
+	indent := -1
+	for i := first; i <= last; i++ {
+		if strings.TrimSpace(plain[i]) == "" {
+			continue
+		}
+		if lead := len(plain[i]) - len(strings.TrimLeft(plain[i], " ")); indent < 0 || lead < indent {
+			indent = lead
+		}
+	}
+	col := indent - 2
+	if col < 0 {
+		col = 0
+	}
+	for i := first; i <= last; i++ {
+		line := lines[i]
+		if lipgloss.Width(line) <= col {
+			line += strings.Repeat(" ", col+1-lipgloss.Width(line))
+		}
+		lines[i] = ansi.Truncate(line, col, "") + marker + ansi.TruncateLeft(line, col+1, "")
+	}
+	return strings.Join(lines, "\n")
 }
 
 // View renders the full terminal output. It is a pure function of model state
