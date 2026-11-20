@@ -29,7 +29,7 @@ var (
 	execBorderStyle = lipgloss.NewStyle().
 			Border(lipgloss.RoundedBorder()).
 			BorderForeground(lipgloss.AdaptiveColor{Light: "#555555", Dark: "#555555"}).
-			Padding(1, 6)
+			Padding(1, 3)
 
 	execTitleStyle = lipgloss.NewStyle().
 			Bold(true).
@@ -596,6 +596,9 @@ func (m Model) handleSearchInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+// overlayMargin is the space left free on each side of the panel.
+const overlayMargin = 2
+
 // overlay wraps body in the shared bordered panel used by the exec output and
 // help views.
 func (m Model) overlay(body string) string {
@@ -604,7 +607,10 @@ func (m Model) overlay(body string) string {
 
 // overlayInnerWidth is the panel width inside its border, padding included.
 func (m Model) overlayInnerWidth() int {
-	panelW := m.width * 4 / 5
+	// Leave a two-cell margin on each side and use the rest. Command output
+	// is tabular and usually 70 to 90 cells wide: a narrower panel wraps
+	// every row of a table and makes it unreadable.
+	panelW := m.width - 2*overlayMargin
 	if panelW < 40 {
 		panelW = 40
 	}
