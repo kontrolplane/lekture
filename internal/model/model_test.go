@@ -568,3 +568,34 @@ func TestMarkerDoesNotMoveTheCode(t *testing.T) {
 		t.Fatalf("code column changed with the marker: %d marked, %d unmarked", marked, unmarked)
 	}
 }
+
+// Long lines wrap inside the panel. They must be counted as the rows they
+// take, or the panel grows past the terminal and loses its bottom border.
+func TestExecOverlayCountsWrappedLines(t *testing.T) {
+	m := deckWithBlocks(t)
+	m.execVisible = true
+	long := strings.Repeat("word ", 40)
+	m.execOutput = strings.TrimRight(strings.Repeat(long+"\n", 12), "\n")
+
+	out := m.renderExecOverlay()
+	rows := strings.Split(out, "\n")
+	if len(rows) > 23 {
+		t.Errorf("overlay is %d rows, taller than the 23 available", len(rows))
+	}
+	if !strings.Contains(rows[len(rows)-1], "╰") {
+		t.Errorf("bottom border missing, last row is %q", ansi.Strip(rows[len(rows)-1]))
+	}
+	if !strings.Contains(out, "esc to dismiss") {
+		t.Error("the dismiss hint was cut off")
+	}
+	for i, row := range rows {
+		if w := lipgloss.Width(row); w > 80 {
+			t.Errorf("row %d is %d cells wide", i, w)
+		}
+	}
+
+	view := m.View()
+	if !strings.Contains(view, "╰") || !strings.Contains(view, "esc to dismiss") {
+		t.Error("the full view cut off the bottom of the panel")
+	}
+}
