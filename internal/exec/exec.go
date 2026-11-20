@@ -19,8 +19,13 @@ type Result struct {
 	Err    error
 }
 
-// Timeout caps how long a code block may run.
-const Timeout = 10 * time.Second
+// DefaultTimeout caps how long a code block may run unless the caller asks
+// for something else.
+const DefaultTimeout = 10 * time.Second
+
+// errTimedOut marks a run that was stopped by its deadline. RunWithTimeout
+// turns it into a message that names the limit that applied.
+var errTimedOut = errors.New("execution timed out")
 
 // Languages lists the supported language identifiers, for error messages.
 var Languages = []string{
@@ -28,7 +33,7 @@ var Languages = []string{
 }
 
 // Run executes a code block in the given language and returns its combined
-// stdout/stderr output. Execution is capped at Timeout.
+// stdout/stderr output. Execution is capped at DefaultTimeout.
 func Run(language, code string) Result {
 	return RunContext(context.Background(), language, code)
 }
@@ -36,7 +41,24 @@ func Run(language, code string) Result {
 // RunContext is Run with a caller-supplied context, so an in-flight execution
 // can be cancelled (e.g. when the user dismisses the output panel).
 func RunContext(parent context.Context, language, code string) Result {
-	ctx, cancel := context.WithTimeout(parent, Timeout)
+	return RunWithTimeout(parent, DefaultTimeout, language, code)
+}
+
+// RunWithTimeout is RunContext with a caller-supplied limit. A timeout that is
+// zero or negative falls back to DefaultTimeout rather than running unbounded.
+func RunWithTimeout(parent context.Context, timeout time.Duration, language, code string) Result {
+	if timeout <= 0 {
+		timeout = DefaultTimeout
+	}
+	r := run(parent, timeout, language, code)
+	if errors.Is(r.Err, errTimedOut) {
+		r.Err = fmt.Errorf("execution timed out after %s", timeout)
+	}
+	return r
+}
+
+func run(parent context.Context, timeout time.Duration, language, code string) Result {
+	ctx, cancel := context.WithTimeout(parent, timeout)
 	defer cancel()
 
 	switch strings.ToLower(language) {
@@ -175,7 +197,7 @@ func capture(ctx context.Context, cmd *exec.Cmd) Result {
 		output += "\n\n(output truncated)"
 	}
 	if ctx.Err() != nil && errors.Is(ctx.Err(), context.DeadlineExceeded) {
-		err = fmt.Errorf("execution timed out after %s", Timeout)
+		err = errTimedOut
 	}
 	return Result{Output: output, Err: err}
 }

@@ -2,9 +2,11 @@ package exec
 
 import (
 	"bytes"
+	"context"
 	"io"
 	"strings"
 	"testing"
+	"time"
 )
 
 // TestLimitedWriterIoCopyContract guards against returning a short write with
@@ -89,5 +91,33 @@ func TestEmptyLanguageIsExplained(t *testing.T) {
 	r := Run("", "x")
 	if r.Err == nil || !strings.Contains(r.Err.Error(), "no language") {
 		t.Errorf("err = %v, want an explanation", r.Err)
+	}
+}
+
+func TestRunWithTimeoutStopsAtTheLimitAndNamesIt(t *testing.T) {
+	start := time.Now()
+	r := RunWithTimeout(context.Background(), 300*time.Millisecond, "bash", "sleep 30")
+	if r.Err == nil || !strings.Contains(r.Err.Error(), "timed out after 300ms") {
+		t.Fatalf("err = %v, want a timeout that names 300ms", r.Err)
+	}
+	if elapsed := time.Since(start); elapsed > 5*time.Second {
+		t.Fatalf("took %s, the limit was not applied", elapsed)
+	}
+}
+
+func TestRunWithTimeoutAllowsMoreThanTheDefault(t *testing.T) {
+	// The limit is per call: a generous one must not cut a quick block short.
+	r := RunWithTimeout(context.Background(), time.Minute, "bash", "echo ok")
+	if r.Err != nil || strings.TrimSpace(r.Output) != "ok" {
+		t.Fatalf("output = %q, err = %v", r.Output, r.Err)
+	}
+}
+
+func TestRunWithTimeoutNonPositiveUsesDefault(t *testing.T) {
+	// Zero must not mean "no deadline": context.WithTimeout(0) would cancel
+	// at once, and an unbounded run is what the limit exists to prevent.
+	r := RunWithTimeout(context.Background(), 0, "bash", "echo ok")
+	if r.Err != nil || strings.TrimSpace(r.Output) != "ok" {
+		t.Fatalf("output = %q, err = %v", r.Output, r.Err)
 	}
 }

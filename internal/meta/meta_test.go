@@ -183,3 +183,41 @@ func TestConfigIsNotClobberedByDefaults(t *testing.T) {
 		t.Errorf("author = %q, want the frontmatter value", merged.Author)
 	}
 }
+
+func TestExecTimeoutValidation(t *testing.T) {
+	cases := map[string]time.Duration{
+		"":      defaultExecTimeout,
+		"30s":   30 * time.Second,
+		"2m":    2 * time.Minute,
+		" 90s ": 90 * time.Second,
+		"0":     defaultExecTimeout,
+		"-5s":   defaultExecTimeout,
+		"soon":  defaultExecTimeout,
+		"30":    defaultExecTimeout, // a bare number has no unit
+		"48h":   maxExecTimeout,
+	}
+	for in, want := range cases {
+		m := Meta{ExecTimeout: in}
+		if got := m.ExecTimeoutDuration(); got != want {
+			t.Errorf("execTimeout %q -> %s, want %s", in, got, want)
+		}
+		m.defaults()
+		if m.ExecTimeout != want.String() {
+			t.Errorf("execTimeout %q normalized to %q, want %q", in, m.ExecTimeout, want.String())
+		}
+	}
+}
+
+func TestExecTimeoutFromFrontmatterWinsOverConfig(t *testing.T) {
+	m, _, err := Extract("---\nexecTimeout: 2m\n---\n# slide\n")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := Merge(Meta{ExecTimeout: "30s"}, m)
+	if got.ExecTimeoutDuration() != 2*time.Minute {
+		t.Errorf("execTimeout = %s, want the frontmatter value", got.ExecTimeoutDuration())
+	}
+	if kept := Merge(Meta{ExecTimeout: "30s"}, Meta{}); kept.ExecTimeoutDuration() != 30*time.Second {
+		t.Errorf("execTimeout = %s, want the config value when frontmatter is silent", kept.ExecTimeoutDuration())
+	}
+}
