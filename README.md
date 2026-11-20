@@ -81,6 +81,7 @@ paging: "%d / %d"
 theme: kontrolplane
 align: top-left
 headingColor: "#F4E8C1"
+execTimeout: 30s
 ---
 ```
 
@@ -92,6 +93,7 @@ headingColor: "#F4E8C1"
 | `theme` | — | built-in name, file path, or `http(s)` url |
 | `align` | `top-left` | `top-left` or `center` |
 | `headingColor` | `#a6da95` | hex color driving the heading palette |
+| `execTimeout` | `10s` | how long one code block may run, as a duration such as `30s` or `2m`; at most `1h` |
 
 invalid values fall back to their defaults rather than rendering as garbage.
 
@@ -230,7 +232,7 @@ press `?` inside the presentation for this list.
 
 while the output panel is open, `↑`/`↓`/`pgup`/`pgdown` scroll long output and `esc` dismisses it — cancelling the program if it is still running.
 
-code execution supports go, python, javascript, ruby, lua, elixir, bash, c, and rust. a block runs for at most 10 seconds in a temporary directory, and the whole process group is terminated when it finishes or is cancelled. **executing a code block runs it on your machine — treat a presentation you did not write the same way you would treat a script.**
+code execution supports go, python, javascript, ruby, lua, elixir, bash, c, and rust. a block runs for at most 10 seconds in a temporary directory, and the whole process group is terminated when it finishes or is cancelled. raise the limit for a deck with `execTimeout` in its frontmatter, or for every deck in the config file, when a demo runs something slower such as creating a cluster. **executing a code block runs it on your machine — treat a presentation you did not write the same way you would treat a script.**
 
 ## contributors
 
