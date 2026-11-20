@@ -7,6 +7,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -16,6 +17,7 @@ import (
 	"github.com/kontrolplane/lekture/internal/model"
 	"github.com/kontrolplane/lekture/internal/render"
 	"github.com/kontrolplane/lekture/internal/server"
+	"github.com/kontrolplane/lekture/internal/window"
 	"golang.org/x/term"
 )
 
@@ -33,6 +35,7 @@ usage:
   lekture serve <presentation.md> [--port PORT] [--host HOST] [--allow-exec]
   lekture dump <presentation.md> [--width N]
   lekture export <presentation.md> [--output FILE]
+  lekture window <presentation.md> [--columns N]
   cat presentation.md | lekture
 
 flags:
@@ -49,6 +52,10 @@ dump flags:
 
 export flags:
   --output FILE    write to FILE instead of stdout
+
+window flags:
+  --columns N      how wide to make the window, in cells (default 100):
+                   fewer columns means bigger text
 `
 
 func main() {
@@ -75,6 +82,10 @@ func run() error {
 			return runDump()
 		case "export":
 			return runExport()
+		case "window":
+			return runWindow()
+		case window.SizeCommand:
+			return runWindowSize()
 		}
 	}
 	return runPresent()
@@ -285,6 +296,56 @@ func runExport() error {
 	}
 	fmt.Fprintf(os.Stderr, "wrote %s (%s)\n", *output, plural(len(d.Slides), "slide"))
 	return nil
+}
+
+// runWindow opens the deck in a fullscreen terminal window of its own, with
+// the font sized so the screen is --columns cells wide.
+func runWindow() error {
+	fs := flag.NewFlagSet("window", flag.ContinueOnError)
+	fs.SetOutput(os.Stderr)
+	fs.Usage = func() { fmt.Fprint(os.Stderr, usage) }
+
+	columns := fs.Int("columns", window.DefaultColumns, "how wide to make the window, in cells")
+
+	path, err := parseArgs(fs, os.Args[2:])
+	if err != nil {
+		return err
+	}
+
+	// Load the deck here first, so a missing file or a broken deck is
+	// reported in this terminal rather than in a window that closes at once.
+	d, err := loadDeck(path)
+	if err != nil {
+		return err
+	}
+	if d.Empty() {
+		return d.EmptyError()
+	}
+
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		return err
+	}
+	dir, err := os.Getwd()
+	if err != nil {
+		return err
+	}
+	self, err := os.Executable()
+	if err != nil {
+		return fmt.Errorf("locating lekture: %w", err)
+	}
+	return window.Open(self, dir, abs, *columns)
+}
+
+// runWindowSize is run by lekture itself, inside the window it opens to
+// measure the screen. It is not part of the documented interface.
+func runWindowSize() error {
+	if len(os.Args) != 3 {
+		return errors.New("usage: lekture " + window.SizeCommand + " <file>")
+	}
+	return window.WriteSize(os.Args[2], func() (int, int, error) {
+		return term.GetSize(int(os.Stdout.Fd()))
+	})
 }
 
 // parseArgs parses flags that may appear before or after the file argument and
