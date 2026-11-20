@@ -57,6 +57,17 @@ func RunWithTimeout(parent context.Context, timeout time.Duration, language, cod
 	return r
 }
 
+// Supported reports whether a code block in the given language can be run.
+// It must list exactly the languages run dispatches on.
+func Supported(language string) bool {
+	switch strings.ToLower(language) {
+	case "go", "golang", "python", "py", "python3", "javascript", "js", "node",
+		"ruby", "rb", "lua", "elixir", "ex", "bash", "sh", "c", "rust", "rs":
+		return true
+	}
+	return false
+}
+
 func run(parent context.Context, timeout time.Duration, language, code string) Result {
 	ctx, cancel := context.WithTimeout(parent, timeout)
 	defer cancel()

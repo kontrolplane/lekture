@@ -315,10 +315,7 @@ func (m Model) handleNormalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.execRunning {
 			break
 		}
-		if m.execBlockIdx >= len(slide.CodeBlocks) {
-			m.execBlockIdx = 0
-		}
-		block := slide.CodeBlocks[m.execBlockIdx]
+		block := slide.CodeBlocks[m.selectedBlock()]
 		m.execVisible = true
 		m.execRunning = true
 		m.execOutput = ""
@@ -336,9 +333,26 @@ func (m Model) handleNormalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if len(m.slides) == 0 || m.current >= len(m.slides) {
 			break
 		}
-		if n := len(m.slides[m.current].CodeBlocks); n > 1 {
-			m.execBlockIdx = (m.execBlockIdx + 1) % n
-			m.searchError = fmt.Sprintf("code block %d/%d selected", m.execBlockIdx+1, n)
+		// Step through the blocks that can run. A diagram or a config
+		// sample is a code block too, but selecting it is never useful. On
+		// a slide with nothing runnable, step through everything as before.
+		blocks := m.slides[m.current].CodeBlocks
+		choices := runnableBlocks(blocks)
+		if len(choices) == 0 {
+			for i := range blocks {
+				choices = append(choices, i)
+			}
+		}
+		if n := len(choices); n > 1 {
+			pos := 0
+			for i, idx := range choices {
+				if idx == m.selectedBlock() {
+					pos = i
+				}
+			}
+			pos = (pos + 1) % n
+			m.execBlockIdx = choices[pos]
+			m.searchError = fmt.Sprintf("code block %d/%d selected", pos+1, n)
 		}
 
 	case "ctrl+n":
@@ -736,12 +750,49 @@ func (m Model) renderContent() string {
 	if err != nil {
 		return fmt.Sprintf("Error rendering slide: %v", err)
 	}
-	// With more than one block on the slide, show which one ctrl+e will run.
-	if blocks := m.slides[m.current].CodeBlocks; m.allowExec && len(blocks) > 1 {
+	// With more than one runnable block on the slide, show which one ctrl+e
+	// will run. Blocks that cannot run are never marked.
+	if blocks := m.slides[m.current].CodeBlocks; m.allowExec && len(runnableBlocks(blocks)) > 1 {
 		marker := lipgloss.NewStyle().Foreground(lipgloss.Color(m.meta.HeadingColor)).Render(selectionMarker)
-		output = markSelectedBlock(output, blocks, m.execBlockIdx, marker)
+		output = markSelectedBlock(output, blocks, m.selectedBlock(), marker)
 	}
 	return output
+}
+
+// runnableBlocks returns the indexes of the blocks ctrl+e can run.
+func runnableBlocks(blocks []parser.CodeBlock) []int {
+	var out []int
+	for i, b := range blocks {
+		if codeexec.Supported(b.Language) {
+			out = append(out, i)
+		}
+	}
+	return out
+}
+
+// selectedBlock is the index of the block ctrl+e runs on the current slide:
+// the chosen one when it can run, otherwise the first that can. On a slide
+// with nothing runnable it is the chosen block, so ctrl+e can still explain
+// why that one cannot run.
+func (m Model) selectedBlock() int {
+	if len(m.slides) == 0 || m.current >= len(m.slides) {
+		return 0
+	}
+	blocks := m.slides[m.current].CodeBlocks
+	idx := m.execBlockIdx
+	if idx >= len(blocks) {
+		idx = 0
+	}
+	runnable := runnableBlocks(blocks)
+	if len(runnable) == 0 {
+		return idx
+	}
+	for _, r := range runnable {
+		if r == idx {
+			return idx
+		}
+	}
+	return runnable[0]
 }
 
 // selectionMarker is drawn in the margin beside the selected code block.
