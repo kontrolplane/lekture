@@ -585,6 +585,11 @@ func (m Model) handleSearchInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 // overlay wraps body in the shared bordered panel used by the exec output and
 // help views.
 func (m Model) overlay(body string) string {
+	return execBorderStyle.Width(m.overlayInnerWidth()).Render(body)
+}
+
+// overlayInnerWidth is the panel width inside its border, padding included.
+func (m Model) overlayInnerWidth() int {
 	panelW := m.width * 4 / 5
 	if panelW < 40 {
 		panelW = 40
@@ -595,7 +600,16 @@ func (m Model) overlay(body string) string {
 	if innerW < 10 {
 		innerW = 10
 	}
-	return execBorderStyle.Width(innerW).Render(body)
+	return innerW
+}
+
+// overlayTextWidth is how many cells of text fit on one line of the panel.
+func (m Model) overlayTextWidth() int {
+	w := m.overlayInnerWidth() - execBorderStyle.GetHorizontalPadding()
+	if w < 1 {
+		w = 1
+	}
+	return w
 }
 
 // renderHelpOverlay lists the keybindings.
@@ -680,7 +694,11 @@ func (m Model) renderExecOverlay() string {
 
 	// Scroll rather than letting View truncate the panel, which would cut off
 	// the border and the dismiss hint before any of the output.
-	lines := strings.Split(body, "\n")
+	//
+	// Wrap to the panel width first. The panel wraps long lines anyway, and
+	// counting lines before it does lets a few long ones make the panel
+	// taller than the terminal, which cuts off its bottom border and hint.
+	lines := strings.Split(ansi.Wrap(body, m.overlayTextWidth(), ""), "\n")
 	avail := m.execBodyHeight()
 	hint := "press esc to dismiss"
 	if len(lines) > avail {
