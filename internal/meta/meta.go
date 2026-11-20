@@ -17,12 +17,18 @@ type Meta struct {
 	Theme        string `yaml:"theme" json:"theme"`
 	Align        string `yaml:"align" json:"align"`               // "top-left" (default) or "center"
 	HeadingColor string `yaml:"headingColor" json:"headingColor"` // hex color for headings, e.g. "#a6da95"
+	ExecTimeout  string `yaml:"execTimeout" json:"execTimeout"`   // limit for one code block, e.g. "10s" or "2m"
 }
 
 const (
 	defaultPaging       = "Slide %d / %d"
 	defaultAlign        = "top-left"
 	defaultHeadingColor = "#a6da95"
+	defaultExecTimeout  = 10 * time.Second
+	// maxExecTimeout bounds what a presentation can ask for. A block still
+	// only runs when the presenter presses the key, and esc cancels it, but a
+	// deck should not be able to make "run" mean "run all day".
+	maxExecTimeout = time.Hour
 )
 
 var (
@@ -54,6 +60,9 @@ func Merge(base, override Meta) Meta {
 	if override.HeadingColor != "" {
 		out.HeadingColor = override.HeadingColor
 	}
+	if override.ExecTimeout != "" {
+		out.ExecTimeout = override.ExecTimeout
+	}
 	return out
 }
 
@@ -75,9 +84,30 @@ func (m *Meta) defaults() {
 	if !hexColorRe.MatchString(m.HeadingColor) {
 		m.HeadingColor = defaultHeadingColor
 	}
+	m.ExecTimeout = normalizeExecTimeout(m.ExecTimeout).String()
 	m.Author = stripControl(m.Author)
 	m.Date = stripControl(m.Date)
 	m.Paging = stripControl(m.Paging)
+}
+
+// ExecTimeoutDuration returns how long one code block may run. It never
+// returns zero: an unset or invalid value yields the default.
+func (m Meta) ExecTimeoutDuration() time.Duration {
+	return normalizeExecTimeout(m.ExecTimeout)
+}
+
+// normalizeExecTimeout parses a duration such as "30s" or "2m". Anything that
+// does not parse, or is not positive, becomes the default; anything above the
+// maximum is clamped to it.
+func normalizeExecTimeout(s string) time.Duration {
+	d, err := time.ParseDuration(strings.TrimSpace(s))
+	if err != nil || d <= 0 {
+		return defaultExecTimeout
+	}
+	if d > maxExecTimeout {
+		return maxExecTimeout
+	}
+	return d
 }
 
 // validPaging reports whether the paging format is safe to pass to Sprintf

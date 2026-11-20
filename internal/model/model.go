@@ -375,7 +375,7 @@ func (m Model) handleNormalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 func (m Model) execCmd(ctx context.Context, language, code string) tea.Cmd {
 	return func() tea.Msg {
 		start := time.Now()
-		r := codeexec.RunContext(ctx, language, code)
+		r := codeexec.RunWithTimeout(ctx, m.meta.ExecTimeoutDuration(), language, code)
 		return execDoneMsg{output: r.Output, err: r.Err, duration: time.Since(start)}
 	}
 }
