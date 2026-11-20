@@ -599,3 +599,23 @@ func TestExecOverlayCountsWrappedLines(t *testing.T) {
 		t.Error("the full view cut off the bottom of the panel")
 	}
 }
+
+// A table as wide as typical command output must fit the panel unwrapped on
+// an ordinary presentation-sized terminal.
+func TestExecOverlayFitsTabularOutput(t *testing.T) {
+	md := "# a\n\n```bash\necho 1\n```\n"
+	m := New(parser.ParseContent(md), t.TempDir(), meta.Meta{Paging: "%d/%d", Align: "top-left", HeadingColor: "#a6da95"}).WithSize(90, 26)
+	m.execVisible = true
+	row := strings.Repeat("x", 76)
+	m.execOutput = row + "\n" + row
+
+	out := m.renderExecOverlay()
+	if got := strings.Count(ansi.Strip(out), row); got != 2 {
+		t.Errorf("a 76-cell row was wrapped in a 90-cell terminal (found %d intact rows)", got)
+	}
+	for i, line := range strings.Split(out, "\n") {
+		if w := lipgloss.Width(line); w > 90 {
+			t.Errorf("panel row %d is %d cells wide, wider than the terminal", i, w)
+		}
+	}
+}
