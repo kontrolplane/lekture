@@ -47,10 +47,19 @@ func RunContext(parent context.Context, language, code string) Result {
 // RunWithTimeout is RunContext with a caller-supplied limit. A timeout that is
 // zero or negative falls back to DefaultTimeout rather than running unbounded.
 func RunWithTimeout(parent context.Context, timeout time.Duration, language, code string) Result {
+	return RunStreaming(parent, timeout, language, code, nil)
+}
+
+// RunStreaming is RunWithTimeout that also copies the program's output to
+// live as it is written, so a caller can show progress before the program
+// exits. live is written to from another goroutine and receives the same
+// bytes the Result ends up holding, up to the same size limit. A nil live
+// gives RunWithTimeout.
+func RunStreaming(parent context.Context, timeout time.Duration, language, code string, live io.Writer) Result {
 	if timeout <= 0 {
 		timeout = DefaultTimeout
 	}
-	r := run(parent, timeout, language, code)
+	r := run(parent, timeout, language, code, live)
 	if errors.Is(r.Err, errTimedOut) {
 		r.Err = fmt.Errorf("execution timed out after %s", timeout)
 	}
@@ -68,29 +77,29 @@ func Supported(language string) bool {
 	return false
 }
 
-func run(parent context.Context, timeout time.Duration, language, code string) Result {
+func run(parent context.Context, timeout time.Duration, language, code string, live io.Writer) Result {
 	ctx, cancel := context.WithTimeout(parent, timeout)
 	defer cancel()
 
 	switch strings.ToLower(language) {
 	case "go", "golang":
-		return runFile(ctx, code, "main.go", "go", "run")
+		return runFile(ctx, live, code, "main.go", "go", "run")
 	case "python", "py", "python3":
-		return runInterpreted(ctx, code, "python3")
+		return runInterpreted(ctx, live, code, "python3")
 	case "javascript", "js", "node":
-		return runInterpreted(ctx, code, "node")
+		return runInterpreted(ctx, live, code, "node")
 	case "ruby", "rb":
-		return runInterpreted(ctx, code, "ruby")
+		return runInterpreted(ctx, live, code, "ruby")
 	case "lua":
-		return runInterpreted(ctx, code, "lua")
+		return runInterpreted(ctx, live, code, "lua")
 	case "elixir", "ex":
-		return runInterpreted(ctx, code, "elixir")
+		return runInterpreted(ctx, live, code, "elixir")
 	case "bash", "sh":
-		return runInterpreted(ctx, code, "bash")
+		return runInterpreted(ctx, live, code, "bash")
 	case "c":
-		return runC(ctx, code)
+		return runC(ctx, live, code)
 	case "rust", "rs":
-		return runRust(ctx, code)
+		return runRust(ctx, live, code)
 	default:
 		if language == "" {
 			return Result{Err: fmt.Errorf("code block has no language (supported: %s)", strings.Join(Languages, ", "))}
@@ -100,7 +109,7 @@ func run(parent context.Context, timeout time.Duration, language, code string) R
 }
 
 // runInterpreted passes code via stdin to an interpreter.
-func runInterpreted(ctx context.Context, code, interpreter string) Result {
+func runInterpreted(ctx context.Context, live io.Writer, code, interpreter string) Result {
 	dir, err := os.MkdirTemp("", "lekture-exec-*")
 	if err != nil {
 		return Result{Err: err}
@@ -110,11 +119,11 @@ func runInterpreted(ctx context.Context, code, interpreter string) Result {
 	cmd := exec.CommandContext(ctx, interpreter)
 	cmd.Dir = dir
 	cmd.Stdin = strings.NewReader(code)
-	return capture(ctx, cmd)
+	return capture(ctx, cmd, live)
 }
 
 // runFile writes code to a temp file and runs it with the given command.
-func runFile(ctx context.Context, code, filename string, args ...string) Result {
+func runFile(ctx context.Context, live io.Writer, code, filename string, args ...string) Result {
 	dir, err := os.MkdirTemp("", "lekture-exec-*")
 	if err != nil {
 		return Result{Err: err}
@@ -129,11 +138,11 @@ func runFile(ctx context.Context, code, filename string, args ...string) Result 
 	cmdArgs := append(args, path)
 	cmd := exec.CommandContext(ctx, cmdArgs[0], cmdArgs[1:]...)
 	cmd.Dir = dir
-	return capture(ctx, cmd)
+	return capture(ctx, cmd, live)
 }
 
 // runC compiles and runs a C program.
-func runC(ctx context.Context, code string) Result {
+func runC(ctx context.Context, live io.Writer, code string) Result {
 	dir, err := os.MkdirTemp("", "lekture-exec-*")
 	if err != nil {
 		return Result{Err: err}
@@ -156,11 +165,11 @@ func runC(ctx context.Context, code string) Result {
 	// Run
 	cmd := exec.CommandContext(ctx, bin)
 	cmd.Dir = dir
-	return capture(ctx, cmd)
+	return capture(ctx, cmd, live)
 }
 
 // runRust compiles and runs a Rust program via rustc.
-func runRust(ctx context.Context, code string) Result {
+func runRust(ctx context.Context, live io.Writer, code string) Result {
 	dir, err := os.MkdirTemp("", "lekture-exec-*")
 	if err != nil {
 		return Result{Err: err}
@@ -181,15 +190,21 @@ func runRust(ctx context.Context, code string) Result {
 
 	cmd := exec.CommandContext(ctx, bin)
 	cmd.Dir = dir
-	return capture(ctx, cmd)
+	return capture(ctx, cmd, live)
 }
 
 // maxOutputBytes limits captured output to prevent OOM from runaway programs.
 const maxOutputBytes = 1 << 20 // 1 MiB
 
-func capture(ctx context.Context, cmd *exec.Cmd) Result {
+// capture runs cmd and collects its combined output. A non-nil live also
+// receives each write as it happens, behind the same size limit.
+func capture(ctx context.Context, cmd *exec.Cmd, live io.Writer) Result {
 	var buf bytes.Buffer
-	limited := &limitedWriter{w: &buf, remaining: maxOutputBytes}
+	var sink io.Writer = &buf
+	if live != nil {
+		sink = io.MultiWriter(&buf, live)
+	}
+	limited := &limitedWriter{w: sink, remaining: maxOutputBytes}
 	cmd.Stdout = limited
 	cmd.Stderr = limited
 

@@ -243,7 +243,7 @@ press `?` inside the presentation for this list.
 - `tab`: select another code block when a slide has more than one
 - `?`: toggle help
 
-while the output panel is open, `↑`/`↓`/`pgup`/`pgdown` scroll long output and `esc` dismisses it — cancelling the program if it is still running.
+the output panel shows a block's output as it is written, not only once it exits, so a slow command such as creating a cluster reports its progress and a command that never ends, such as `kubectl get pods --watch`, can be shown live. while a block runs the panel stays on the newest line; `↑`/`pgup` scroll back and hold that position, and `end` returns to the newest line. `↑`/`↓`/`pgup`/`pgdown` scroll long output and `esc` dismisses the panel — cancelling the program if it is still running. a program that buffers its output when it is not writing to a terminal (python does, without `-u`) still shows it in bursts.
 
 code execution supports go, python, javascript, ruby, lua, elixir, bash, c, and rust. a block runs for at most 10 seconds in a temporary directory, and the whole process group is terminated when it finishes or is cancelled. raise the limit for a deck with `execTimeout` in its frontmatter, or for every deck in the config file, when a demo runs something slower such as creating a cluster. **executing a code block runs it on your machine — treat a presentation you did not write the same way you would treat a script.**
 

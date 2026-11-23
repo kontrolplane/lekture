@@ -3,6 +3,7 @@ package model
 import (
 	"strings"
 	"testing"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -664,5 +665,109 @@ func TestExecOverlayFitsTabularOutput(t *testing.T) {
 		if w := lipgloss.Width(line); w > 90 {
 			t.Errorf("panel row %d is %d cells wide, wider than the terminal", i, w)
 		}
+	}
+}
+
+// running puts the model in the state ctrl+e leaves it in, without starting
+// a program.
+func running(t *testing.T) Model {
+	t.Helper()
+	m := deckWithBlocks(t)
+	m.execVisible = true
+	m.execRunning = true
+	m.execFollow = true
+	m.execRun = 1
+	m.execLive = &liveOutput{}
+	m.execStart = time.Now()
+	return m
+}
+
+func update(m Model, msg tea.Msg) (Model, tea.Cmd) {
+	next, cmd := m.Update(msg)
+	return next.(Model), cmd
+}
+
+func TestRunningBlockShowsOutputAsItArrives(t *testing.T) {
+	m := running(t)
+	if got := m.renderExecOverlay(); !strings.Contains(got, "Running...") {
+		t.Errorf("expected a placeholder before any output:\n%s", got)
+	}
+
+	m.execLive.Write([]byte("creating cluster\n"))
+	m, cmd := update(m, execTickMsg{run: 1})
+	if cmd == nil {
+		t.Error("a tick while running should schedule the next one")
+	}
+	got := m.renderExecOverlay()
+	if !strings.Contains(got, "creating cluster") {
+		t.Errorf("output written so far is not shown while running:\n%s", got)
+	}
+	if strings.Contains(got, "Running...") {
+		t.Errorf("the placeholder should give way to real output:\n%s", got)
+	}
+	if !strings.Contains(got, "esc to cancel") {
+		t.Errorf("the hint should say esc cancels a running block:\n%s", got)
+	}
+}
+
+func TestRunningBlockFollowsNewOutput(t *testing.T) {
+	m := running(t)
+	m.execLive.Write([]byte(strings.Repeat("line\n", 200) + "newest\n"))
+	m, _ = update(m, execTickMsg{run: 1})
+	if got := m.renderExecOverlay(); !strings.Contains(got, "newest") {
+		t.Errorf("the panel should stay on the newest line:\n%s", got)
+	}
+
+	// Scrolling back holds the position while more output arrives.
+	m = send(m, "up", "up", "up")
+	m.execLive.Write([]byte("later\n"))
+	m, _ = update(m, execTickMsg{run: 1})
+	got := m.renderExecOverlay()
+	if strings.Contains(got, "later") || strings.Contains(got, "newest") {
+		t.Errorf("scrolling back should stop following:\n%s", got)
+	}
+
+	// end picks the newest output up again.
+	if got := send(m, "end").renderExecOverlay(); !strings.Contains(got, "later") {
+		t.Errorf("end should return to the newest line:\n%s", got)
+	}
+}
+
+func TestFinishedStreamStaysOnItsLastLines(t *testing.T) {
+	out := strings.Repeat("line\n", 200) + "newest\n"
+
+	m := running(t)
+	m, _ = update(m, execDoneMsg{run: 1, output: out, duration: 30 * time.Second})
+	if got := m.renderExecOverlay(); !strings.Contains(got, "newest") {
+		t.Errorf("a block that streamed should stay on its last lines:\n%s", got)
+	}
+
+	m = running(t)
+	m, _ = update(m, execDoneMsg{run: 1, output: out, duration: 50 * time.Millisecond})
+	if got := m.renderExecOverlay(); strings.Contains(got, "newest") {
+		t.Errorf("a block that finished at once should show from the top:\n%s", got)
+	}
+}
+
+func TestStaleRunCannotOverwriteThePanel(t *testing.T) {
+	m := running(t)
+	m.execRun = 2 // a newer run replaced run 1
+	m, cmd := update(m, execTickMsg{run: 1})
+	if cmd != nil {
+		t.Error("a tick from a retired run should not reschedule itself")
+	}
+	m, _ = update(m, execDoneMsg{run: 1, output: "old"})
+	if !m.execRunning || m.execOutput != "" {
+		t.Errorf("a retired run changed the panel: running=%v output=%q", m.execRunning, m.execOutput)
+	}
+}
+
+func TestDismissingRetiresTheRun(t *testing.T) {
+	m := running(t)
+	m.execCancel = func() {}
+	m = send(m, "esc")
+	m, _ = update(m, execDoneMsg{run: 1, output: "late"})
+	if m.execOutput != "" {
+		t.Errorf("a cancelled run delivered output after the panel closed: %q", m.execOutput)
 	}
 }

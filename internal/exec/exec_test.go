@@ -5,6 +5,7 @@ import (
 	"context"
 	"io"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -138,5 +139,65 @@ func TestSupportedMatchesRun(t *testing.T) {
 		if r := Run(lang, "x"); r.Err == nil || !strings.Contains(r.Err.Error(), "supported:") {
 			t.Errorf("Run(%q) should refuse the language, got %v", lang, r.Err)
 		}
+	}
+}
+
+// syncWriter records writes made from the program's goroutine.
+type syncWriter struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (w *syncWriter) Write(p []byte) (int, error) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.buf.Write(p)
+}
+
+func (w *syncWriter) String() string {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.buf.String()
+}
+
+// TestRunStreamingDeliversOutputBeforeExit guards the point of streaming: the
+// first line must reach the live writer while the program is still running.
+func TestRunStreamingDeliversOutputBeforeExit(t *testing.T) {
+	live := &syncWriter{}
+	done := make(chan Result, 1)
+	go func() {
+		done <- RunStreaming(context.Background(), 10*time.Second, "bash", "echo first; sleep 2; echo second", live)
+	}()
+
+	deadline := time.After(1500 * time.Millisecond)
+	for live.String() != "first\n" {
+		select {
+		case r := <-done:
+			t.Fatalf("program exited before its first line was streamed: %+v, live=%q", r, live.String())
+		case <-deadline:
+			t.Fatalf("first line was not streamed while the program ran, live=%q", live.String())
+		case <-time.After(10 * time.Millisecond):
+		}
+	}
+
+	r := <-done
+	if r.Err != nil {
+		t.Fatal(r.Err)
+	}
+	if want := "first\nsecond\n"; r.Output != want || live.String() != want {
+		t.Errorf("output = %q, live = %q, want both %q", r.Output, live.String(), want)
+	}
+}
+
+// TestRunStreamingRespectsTheOutputLimit keeps a runaway program from growing
+// the live copy past what the result is allowed to hold.
+func TestRunStreamingRespectsTheOutputLimit(t *testing.T) {
+	live := &syncWriter{}
+	r := RunStreaming(context.Background(), 10*time.Second, "bash", "head -c 2000000 /dev/zero | tr '\\0' x", live)
+	if r.Err != nil {
+		t.Fatal(r.Err)
+	}
+	if got := len(live.String()); got != maxOutputBytes {
+		t.Errorf("live copy holds %d bytes, want %d", got, maxOutputBytes)
 	}
 }
