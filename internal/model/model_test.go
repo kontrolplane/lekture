@@ -526,11 +526,11 @@ func TestSelectedBlockIsMarkedAndFollowsTab(t *testing.T) {
 	}
 }
 
-func TestSingleBlockIsNotMarked(t *testing.T) {
+func TestSingleBlockIsMarked(t *testing.T) {
 	md := "# a\n\n```bash\necho one\n```\n"
 	m := New(parser.ParseContent(md), t.TempDir(), meta.Meta{Paging: "%d/%d", Align: "top-left", HeadingColor: "#a6da95"}).WithSize(80, 24)
-	if got := markedLines(m.View()); len(got) != 0 {
-		t.Fatalf("a lone block needs no marker, got %q", got)
+	if got := markedLines(m.View()); len(got) != 1 || got[0] != "echo one" {
+		t.Fatalf("a lone runnable block should be marked, got %q", got)
 	}
 }
 
@@ -626,14 +626,16 @@ func TestSelectionSkipsBlocksThatCannotRun(t *testing.T) {
 	}
 }
 
-func TestNoMarkerWithOneRunnableBlock(t *testing.T) {
+// A slide with a single runnable block is marked like any other, so the
+// marker does not come and go from slide to slide.
+func TestOneRunnableBlockIsMarked(t *testing.T) {
 	md := "# a\n\n```bash\necho one\n```\n\n```text\na diagram\n```\n"
 	m := New(parser.ParseContent(md), t.TempDir(), meta.Meta{Paging: "%d/%d", Align: "top-left", HeadingColor: "#a6da95"}).WithSize(80, 24)
-	if got := markedLines(m.View()); len(got) != 0 {
-		t.Fatalf("one runnable block needs no marker, got %q", got)
+	if got := markedLines(m.View()); len(got) != 1 || got[0] != "echo one" {
+		t.Fatalf("the only runnable block should be marked, got %q", got)
 	}
-	if got := markedLines(send(m, "tab").View()); len(got) != 0 {
-		t.Fatalf("tab must not select the diagram, got %q", got)
+	if got := markedLines(send(m, "tab").View()); len(got) != 1 || got[0] != "echo one" {
+		t.Fatalf("tab must not move the marker to the diagram, got %q", got)
 	}
 }
 

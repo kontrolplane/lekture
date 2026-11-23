@@ -756,9 +756,10 @@ func (m Model) renderContent() string {
 	if err != nil {
 		return fmt.Sprintf("Error rendering slide: %v", err)
 	}
-	// With more than one runnable block on the slide, show which one ctrl+e
-	// will run. Blocks that cannot run are never marked.
-	if blocks := m.slides[m.current].CodeBlocks; m.allowExec && len(runnableBlocks(blocks)) > 1 {
+	// Show which block ctrl+e will run on every slide that has one, also
+	// when it is the only one: a marker that comes and goes between slides
+	// reads as a glitch. Blocks that cannot run are never marked.
+	if blocks := m.slides[m.current].CodeBlocks; m.allowExec && len(runnableBlocks(blocks)) > 0 {
 		marker := lipgloss.NewStyle().Foreground(lipgloss.Color(m.meta.HeadingColor)).Render(selectionMarker)
 		output = markSelectedBlock(output, blocks, m.selectedBlock(), marker)
 	}
