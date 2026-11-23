@@ -1,6 +1,7 @@
 package model
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -8,6 +9,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 	"unicode/utf8"
 
@@ -62,11 +64,43 @@ type WarningMsg struct {
 	Text string
 }
 
-// execDoneMsg is sent when code execution completes.
+// execDoneMsg is sent when code execution completes. run identifies the
+// execution it belongs to, so a block that was cancelled and replaced by a
+// newer run cannot overwrite the newer run's panel.
 type execDoneMsg struct {
+	run      int
 	output   string
 	err      error
 	duration time.Duration
+}
+
+// execTickMsg refreshes the output panel while a block is still running.
+type execTickMsg struct {
+	run int
+}
+
+// execTickInterval is how often a running block's output is redrawn. Output
+// is collected as it is written and drawn on this beat, so a chatty program
+// cannot flood the event loop with one message per write.
+const execTickInterval = 100 * time.Millisecond
+
+// liveOutput collects a running program's output. The program writes to it
+// from its own goroutine while the model reads it on every tick.
+type liveOutput struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (l *liveOutput) Write(p []byte) (int, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.buf.Write(p)
+}
+
+func (l *liveOutput) String() string {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.buf.String()
 }
 
 // Model is the Bubble Tea model for the presentation.
@@ -115,6 +149,14 @@ type Model struct {
 	execScroll   int
 	execDuration time.Duration
 	execCancel   context.CancelFunc
+	// execRun numbers the executions, execLive receives the output of the
+	// one in flight, and execStart is when it began.
+	execRun   int
+	execLive  *liveOutput
+	execStart time.Time
+	// execFollow keeps the panel on the newest output. It is on while a
+	// block runs and goes off when the user scrolls back.
+	execFollow bool
 }
 
 // New creates a new presentation model.
@@ -190,12 +232,32 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.renderer.SetSize(msg.Width, msg.Height)
 		return m, nil
 
+	case execTickMsg:
+		if !m.execRunning || msg.run != m.execRun {
+			return m, nil
+		}
+		if m.execLive != nil {
+			m.execOutput = m.execLive.String()
+		}
+		return m, execTick(msg.run)
+
 	case execDoneMsg:
+		if msg.run != m.execRun {
+			return m, nil
+		}
 		m.execRunning = false
 		m.execOutput = msg.output
 		m.execErr = msg.err
 		m.execDuration = msg.duration
 		m.execCancel = nil
+		m.execLive = nil
+		// Nobody watched a block that finished at once, so show its output
+		// from the top. One that streamed stays on its last lines, where
+		// the audience was already reading.
+		if m.execFollow && msg.duration < time.Second {
+			m.execFollow = false
+			m.execScroll = 0
+		}
 		return m, nil
 
 	case tea.KeyMsg:
@@ -322,10 +384,17 @@ func (m Model) handleNormalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.execErr = nil
 		m.execScroll = 0
 		m.execDuration = 0
+		m.execFollow = true
+		m.execRun++
+		m.execLive = &liveOutput{}
+		m.execStart = time.Now()
 
 		ctx, cancel := context.WithCancel(context.Background())
 		m.execCancel = cancel
-		return m, m.execCmd(ctx, block.Language, block.Code)
+		return m, tea.Batch(
+			m.execCmd(ctx, m.execRun, m.execLive, block.Language, block.Code),
+			execTick(m.execRun),
+		)
 
 	case "tab":
 		// Choose which code block ctrl+e will run.
@@ -386,12 +455,23 @@ func (m Model) handleNormalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 // execCmd returns a tea.Cmd that runs a code block asynchronously. The context
 // lets the user cancel a long-running block by dismissing the panel.
-func (m Model) execCmd(ctx context.Context, language, code string) tea.Cmd {
+//
+// The block's output is copied to live while it runs; execTick redraws the
+// panel from it until the execDoneMsg for the same run arrives.
+func (m Model) execCmd(ctx context.Context, run int, live *liveOutput, language, code string) tea.Cmd {
+	timeout := m.meta.ExecTimeoutDuration()
 	return func() tea.Msg {
 		start := time.Now()
-		r := codeexec.RunWithTimeout(ctx, m.meta.ExecTimeoutDuration(), language, code)
-		return execDoneMsg{output: r.Output, err: r.Err, duration: time.Since(start)}
+		r := codeexec.RunStreaming(ctx, timeout, language, code, live)
+		return execDoneMsg{run: run, output: r.Output, err: r.Err, duration: time.Since(start)}
 	}
+}
+
+// execTick schedules the next redraw of a running block's output.
+func execTick(run int) tea.Cmd {
+	return tea.Tick(execTickInterval, func(time.Time) tea.Msg {
+		return execTickMsg{run: run}
+	})
 }
 
 // advance moves to the next reveal, or to the next slide once the current one
@@ -474,24 +554,57 @@ func (m Model) handleExecKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.execOutput = ""
 		m.execErr = nil
 		m.execScroll = 0
+		m.execFollow = false
+		m.execLive = nil
+		// Retire the run, so its tick and its result are both ignored.
+		m.execRun++
 
 	case "down", "j":
 		m.execScroll++
 	case "up", "k":
+		m = m.stopFollowing()
 		if m.execScroll > 0 {
 			m.execScroll--
 		}
 	case "pgdown", " ":
 		m.execScroll += m.execBodyHeight()
 	case "pgup":
+		m = m.stopFollowing()
 		m.execScroll -= m.execBodyHeight()
 		if m.execScroll < 0 {
 			m.execScroll = 0
 		}
 	case "home", "g":
+		m.execFollow = false
 		m.execScroll = 0
+	case "end", "G":
+		m.execFollow = true
+	}
+	// Scrolling down to the last line picks the newest output up again.
+	if !m.execFollow && m.execRunning {
+		if maxScroll := m.execMaxScroll(); maxScroll > 0 && m.execScroll >= maxScroll {
+			m.execFollow = true
+		}
 	}
 	return m, nil
+}
+
+// stopFollowing pins the panel where it is, so scrolling back from the
+// newest output starts from the lines on screen rather than from the top.
+func (m Model) stopFollowing() Model {
+	if m.execFollow {
+		m.execFollow = false
+		m.execScroll = m.execMaxScroll()
+	}
+	return m
+}
+
+// execMaxScroll is the scroll offset that shows the last line of output.
+func (m Model) execMaxScroll() int {
+	if over := len(m.execLines()) - m.execBodyHeight(); over > 0 {
+		return over
+	}
+	return 0
 }
 
 // execBodyHeight is how many lines of output the panel can show.
@@ -688,21 +801,19 @@ func (m Model) execStatus() string {
 	return "failed"
 }
 
-// renderExecOverlay builds the code execution output panel.
-func (m Model) renderExecOverlay() string {
-	title := "Output"
-	if m.execRunning {
-		title = "Running"
-	}
-	title += " · " + m.execStatus()
-	if m.execDuration > 0 {
-		title += " · " + m.execDuration.Round(time.Millisecond).String()
-	}
-
+// execLines is the text of the output panel, wrapped to its width: what the
+// block has written so far while it runs, and all of it once it has exited.
+//
+// Wrapping happens here, before lines are counted. The panel wraps long
+// lines anyway, and counting first lets a few long ones make the panel
+// taller than the terminal, which cuts off its bottom border and hint.
+func (m Model) execLines() []string {
 	var body string
 	switch {
-	case m.execRunning:
+	case m.execRunning && m.execOutput == "":
 		body = execDimStyle.Render("Running...")
+	case m.execRunning:
+		body = strings.TrimRight(m.execOutput, "\n")
 	case m.execErr != nil && m.execOutput == "":
 		body = m.execErr.Error()
 	default:
@@ -711,19 +822,35 @@ func (m Model) renderExecOverlay() string {
 			body += "\n\n" + execDimStyle.Render(m.execErr.Error())
 		}
 	}
+	return strings.Split(ansi.Wrap(body, m.overlayTextWidth(), ""), "\n")
+}
+
+// renderExecOverlay builds the code execution output panel.
+func (m Model) renderExecOverlay() string {
+	title := "Output · " + m.execStatus()
+	if m.execRunning {
+		title = "Running"
+		if !m.execStart.IsZero() {
+			title += " · " + time.Since(m.execStart).Truncate(time.Second).String()
+		}
+	} else if m.execDuration > 0 {
+		title += " · " + m.execDuration.Round(time.Millisecond).String()
+	}
 
 	// Scroll rather than letting View truncate the panel, which would cut off
 	// the border and the dismiss hint before any of the output.
-	//
-	// Wrap to the panel width first. The panel wraps long lines anyway, and
-	// counting lines before it does lets a few long ones make the panel
-	// taller than the terminal, which cuts off its bottom border and hint.
-	lines := strings.Split(ansi.Wrap(body, m.overlayTextWidth(), ""), "\n")
+	lines := m.execLines()
 	avail := m.execBodyHeight()
 	hint := "press esc to dismiss"
+	if m.execRunning {
+		hint = "press esc to cancel"
+	}
 	if len(lines) > avail {
 		maxScroll := len(lines) - avail
 		scroll := min(m.execScroll, maxScroll)
+		if m.execFollow {
+			scroll = maxScroll
+		}
 		lines = lines[scroll : scroll+avail]
 		hint = fmt.Sprintf("lines %d-%d of %d · ↑/↓ scroll · esc to dismiss",
 			scroll+1, scroll+avail, len(lines)+maxScroll)
