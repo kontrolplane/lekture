@@ -600,6 +600,51 @@ func TestExecOverlayCountsWrappedLines(t *testing.T) {
 	}
 }
 
+// A diagram before the command must not steal the selection: ctrl+e runs the
+// first block that can run, tab never stops on the diagram, and with a single
+// runnable block there is nothing to mark.
+func TestSelectionSkipsBlocksThatCannotRun(t *testing.T) {
+	md := "# a\n\n```text\na diagram\n```\n\n```bash\necho one\n```\n\n```yaml\nkey: value\n```\n\n```bash\necho two\n```\n"
+	m := New(parser.ParseContent(md), t.TempDir(), meta.Meta{Paging: "%d/%d", Align: "top-left", HeadingColor: "#a6da95"}).WithSize(80, 30)
+
+	if got := m.selectedBlock(); got != 1 {
+		t.Fatalf("selected block = %d, want the first runnable one (1)", got)
+	}
+	if got := markedLines(m.View()); len(got) != 1 || got[0] != "echo one" {
+		t.Fatalf("marker should be on the first command, got %q", got)
+	}
+	m = send(m, "tab")
+	if got := m.selectedBlock(); got != 3 {
+		t.Fatalf("after tab selected block = %d, want the next runnable one (3)", got)
+	}
+	if got := markedLines(m.View()); len(got) != 1 || got[0] != "echo two" {
+		t.Fatalf("marker should move to the second command, got %q", got)
+	}
+	m = send(m, "tab")
+	if got := m.selectedBlock(); got != 1 {
+		t.Fatalf("tab should wrap to the first runnable block, got %d", got)
+	}
+}
+
+func TestNoMarkerWithOneRunnableBlock(t *testing.T) {
+	md := "# a\n\n```bash\necho one\n```\n\n```text\na diagram\n```\n"
+	m := New(parser.ParseContent(md), t.TempDir(), meta.Meta{Paging: "%d/%d", Align: "top-left", HeadingColor: "#a6da95"}).WithSize(80, 24)
+	if got := markedLines(m.View()); len(got) != 0 {
+		t.Fatalf("one runnable block needs no marker, got %q", got)
+	}
+	if got := markedLines(send(m, "tab").View()); len(got) != 0 {
+		t.Fatalf("tab must not select the diagram, got %q", got)
+	}
+}
+
+func TestNoMarkerWhenNothingCanRun(t *testing.T) {
+	md := "# a\n\n```text\none\n```\n\n```yaml\ntwo: 2\n```\n"
+	m := New(parser.ParseContent(md), t.TempDir(), meta.Meta{Paging: "%d/%d", Align: "top-left", HeadingColor: "#a6da95"}).WithSize(80, 24)
+	if got := markedLines(m.View()); len(got) != 0 {
+		t.Fatalf("nothing runnable, nothing to mark, got %q", got)
+	}
+}
+
 // A table as wide as typical command output must fit the panel unwrapped on
 // an ordinary presentation-sized terminal.
 func TestExecOverlayFitsTabularOutput(t *testing.T) {

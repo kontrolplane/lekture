@@ -121,3 +121,22 @@ func TestRunWithTimeoutNonPositiveUsesDefault(t *testing.T) {
 		t.Fatalf("output = %q, err = %v", r.Output, r.Err)
 	}
 }
+
+// Supported must agree with what Run actually dispatches on, or a block could
+// be offered for selection and then refused, or the other way round.
+func TestSupportedMatchesRun(t *testing.T) {
+	for _, lang := range []string{"go", "golang", "python", "py", "python3", "javascript", "js", "node",
+		"ruby", "rb", "lua", "elixir", "ex", "bash", "sh", "BASH", "c", "rust", "rs"} {
+		if !Supported(lang) {
+			t.Errorf("Supported(%q) = false, but Run handles it", lang)
+		}
+	}
+	for _, lang := range []string{"", "text", "yaml", "csv", "mermaid"} {
+		if Supported(lang) {
+			t.Errorf("Supported(%q) = true", lang)
+		}
+		if r := Run(lang, "x"); r.Err == nil || !strings.Contains(r.Err.Error(), "supported:") {
+			t.Errorf("Run(%q) should refuse the language, got %v", lang, r.Err)
+		}
+	}
+}
