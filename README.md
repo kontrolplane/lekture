@@ -61,6 +61,15 @@ lekture dump presentation.md | less -R
 lekture dump presentation.md --width 100 > deck.txt
 ```
 
+`lekture check` lays every slide out for a terminal of a given size and lists the ones that do not fit, so you find out before the deck is on a projector:
+
+```bash
+lekture check presentation.md
+lekture check presentation.md --columns 90 --rows 24
+```
+
+a slide is reported when it is taller than the terminal, wider than it, or holds a line of code long enough to be wrapped, which is what breaks a diagram or a table drawn in a code block. the default is 100 columns by 26 rows, which is what a 16:9 screen shows at the 100 columns `lekture window` uses. the command exits with status 1 when a slide does not fit, so it can run in ci. while presenting, a slide that is cut off says so in the status bar (`4 rows cut off`).
+
 `lekture window` opens the deck in a fullscreen terminal window of its own, with the font sized so the slides fill the screen:
 
 ```bash
@@ -95,6 +104,7 @@ theme: kontrolplane
 align: top-left
 headingColor: "#F4E8C1"
 execTimeout: 30s
+timer: elapsed
 ---
 ```
 
@@ -107,6 +117,7 @@ execTimeout: 30s
 | `align` | `top-left` | `top-left` or `center` |
 | `headingColor` | `#a6da95` | hex color driving the heading palette |
 | `execTimeout` | `10s` | how long one code block may run, as a duration such as `30s` or `2m`; at most `1h` |
+| `timer` | — | `elapsed` shows how long the talk has run in the status bar, counting from the first move off the opening slide; `clock` shows the time of day |
 
 invalid values fall back to their defaults rather than rendering as garbage.
 
@@ -129,6 +140,8 @@ a slide can be revealed in stages. put `<!-- pause -->` on a line of its own and
 ```
 
 the status bar shows the reveal position, e.g. `3 / 17 (2/3)`. the marker is invisible to every markdown renderer, and a `<!-- pause -->` inside a fenced code block is treated as content, so you can show one on a slide.
+
+with `align: center` a slide is centered where its finished form will be, so a reveal adds its lines without moving the ones already on screen.
 
 moving forward walks the reveals, then moves to the next slide. moving backward walks them in reverse, and stepping back into a previous slide lands on its *last* reveal rather than hiding what the audience already saw. counted motions (`5j`), `gg`, `G`, `home`, `end` and search jump between slides and start from the first reveal.
 
@@ -240,12 +253,15 @@ press `?` inside the presentation for this list.
 - `ctrl+n`: next search result
 - `ctrl+p`: previous search result
 - `ctrl+e`: execute the selected code block
+- `r`: run the block again, from its output
 - `tab`: select another code block when a slide has more than one
 - `?`: toggle help
 
+the output panel covers the slide, so it repeats the command it ran above the output (the first few lines of a long block). `r` or `ctrl+e` runs the same block again without going back to the slide.
+
 the output panel shows a block's output as it is written, not only once it exits, so a slow command such as creating a cluster reports its progress and a command that never ends, such as `kubectl get pods --watch`, can be shown live. while a block runs the panel stays on the newest line; `↑`/`pgup` scroll back and hold that position, and `end` returns to the newest line. `↑`/`↓`/`pgup`/`pgdown` scroll long output and `esc` dismisses the panel — cancelling the program if it is still running. a program that buffers its output when it is not writing to a terminal (python does, without `-u`) still shows it in bursts.
 
-code execution supports go, python, javascript, ruby, lua, elixir, bash, c, and rust. a block runs for at most 10 seconds in a temporary directory, and the whole process group is terminated when it finishes or is cancelled. raise the limit for a deck with `execTimeout` in its frontmatter, or for every deck in the config file, when a demo runs something slower such as creating a cluster. **executing a code block runs it on your machine — treat a presentation you did not write the same way you would treat a script.**
+code execution supports go, python, javascript, ruby, lua, elixir, bash, c, and rust. a block runs for at most 10 seconds in a temporary directory, and the whole process group is terminated when it finishes or is cancelled. raise the limit for a deck with `execTimeout` in its frontmatter, or for every deck in the config file, when a demo runs something slower such as creating a cluster. a block is run from a file with nothing on its standard input, so a command that reads input sees end of input rather than the rest of the block. **executing a code block runs it on your machine — treat a presentation you did not write the same way you would treat a script.**
 
 ## contributors
 

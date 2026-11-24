@@ -221,3 +221,29 @@ func TestExecTimeoutFromFrontmatterWinsOverConfig(t *testing.T) {
 		t.Errorf("execTimeout = %s, want the config value when frontmatter is silent", kept.ExecTimeoutDuration())
 	}
 }
+
+func TestTimerIsNormalized(t *testing.T) {
+	cases := map[string]string{
+		"":         TimerOff,
+		"elapsed":  TimerElapsed,
+		" Clock ":  TimerClock,
+		"off":      TimerOff,
+		"stopwatc": TimerOff,
+	}
+	for in, want := range cases {
+		m := Meta{Timer: in}
+		m.Defaults()
+		if m.Timer != want {
+			t.Errorf("Timer %q normalized to %q, want %q", in, m.Timer, want)
+		}
+	}
+}
+
+func TestMergeKeepsTheDeckTimer(t *testing.T) {
+	if got := Merge(Meta{Timer: "clock"}, Meta{Timer: "elapsed"}).Timer; got != "elapsed" {
+		t.Errorf("frontmatter timer should win, got %q", got)
+	}
+	if got := Merge(Meta{Timer: "clock"}, Meta{}).Timer; got != "clock" {
+		t.Errorf("config timer should survive an unset frontmatter, got %q", got)
+	}
+}

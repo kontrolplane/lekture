@@ -85,17 +85,17 @@ func run(parent context.Context, timeout time.Duration, language, code string, l
 	case "go", "golang":
 		return runFile(ctx, live, code, "main.go", "go", "run")
 	case "python", "py", "python3":
-		return runInterpreted(ctx, live, code, "python3")
+		return runFile(ctx, live, code, "main.py", "python3")
 	case "javascript", "js", "node":
-		return runInterpreted(ctx, live, code, "node")
+		return runFile(ctx, live, code, "main.js", "node")
 	case "ruby", "rb":
-		return runInterpreted(ctx, live, code, "ruby")
+		return runFile(ctx, live, code, "main.rb", "ruby")
 	case "lua":
-		return runInterpreted(ctx, live, code, "lua")
+		return runFile(ctx, live, code, "main.lua", "lua")
 	case "elixir", "ex":
-		return runInterpreted(ctx, live, code, "elixir")
+		return runFile(ctx, live, code, "main.exs", "elixir")
 	case "bash", "sh":
-		return runInterpreted(ctx, live, code, "bash")
+		return runFile(ctx, live, code, "main.sh", "bash")
 	case "c":
 		return runC(ctx, live, code)
 	case "rust", "rs":
@@ -108,21 +108,13 @@ func run(parent context.Context, timeout time.Duration, language, code string, l
 	}
 }
 
-// runInterpreted passes code via stdin to an interpreter.
-func runInterpreted(ctx context.Context, live io.Writer, code, interpreter string) Result {
-	dir, err := os.MkdirTemp("", "lekture-exec-*")
-	if err != nil {
-		return Result{Err: err}
-	}
-	defer os.RemoveAll(dir)
-
-	cmd := exec.CommandContext(ctx, interpreter)
-	cmd.Dir = dir
-	cmd.Stdin = strings.NewReader(code)
-	return capture(ctx, cmd, live)
-}
-
 // runFile writes code to a temp file and runs it with the given command.
+//
+// The code is never passed on the interpreter's standard input. A shell that
+// reads its script from stdin shares that stream with the commands it starts,
+// so the first one that reads input ("read", "kubectl run -i", a prompt)
+// swallows the lines that follow it and they never run. With the script in a
+// file, standard input is empty and such a command sees end of input instead.
 func runFile(ctx context.Context, live io.Writer, code, filename string, args ...string) Result {
 	dir, err := os.MkdirTemp("", "lekture-exec-*")
 	if err != nil {
