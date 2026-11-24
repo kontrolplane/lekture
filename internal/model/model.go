@@ -40,6 +40,9 @@ var (
 	execDimStyle = lipgloss.NewStyle().
 			Foreground(lipgloss.AdaptiveColor{Light: "#999999", Dark: "#666666"})
 
+	execCommandStyle = lipgloss.NewStyle().
+				Foreground(lipgloss.AdaptiveColor{Light: "#333333", Dark: "#cccccc"})
+
 	warningStyle = lipgloss.NewStyle().
 			Foreground(lipgloss.AdaptiveColor{Light: "#b36b00", Dark: "#e5a44c"}).
 			Padding(0, 1)
@@ -77,6 +80,14 @@ type execDoneMsg struct {
 // execTickMsg refreshes the output panel while a block is still running.
 type execTickMsg struct {
 	run int
+}
+
+// clockTickMsg redraws the status bar so its timer keeps moving.
+type clockTickMsg struct{}
+
+// clockTick schedules the next redraw of the status bar timer.
+func clockTick() tea.Cmd {
+	return tea.Tick(time.Second, func(time.Time) tea.Msg { return clockTickMsg{} })
 }
 
 // execTickInterval is how often a running block's output is redrawn. Output
@@ -137,7 +148,7 @@ type Model struct {
 
 	// allowExec gates code execution. It is disabled for served sessions
 	// unless explicitly enabled, since a viewer could otherwise run the
-	// deck'''s code blocks on the presenter'''s machine.
+	// deck's code blocks on the presenter's machine.
 	allowExec bool
 
 	// Code execution state
@@ -157,6 +168,14 @@ type Model struct {
 	// execFollow keeps the panel on the newest output. It is on while a
 	// block runs and goes off when the user scrolls back.
 	execFollow bool
+	// execLang and execCode are the block the panel is showing, kept so the
+	// panel can show the command above its output and run it again.
+	execLang string
+	execCode string
+
+	// timerStart is when the elapsed timer began: the first time the
+	// presenter moved off the opening slide. Zero until then.
+	timerStart time.Time
 }
 
 // New creates a new presentation model.
@@ -196,6 +215,9 @@ func (m Model) WithExec(allow bool) Model {
 
 // Init satisfies tea.Model. No initial command is needed.
 func (m Model) Init() tea.Cmd {
+	if m.meta.Timer != meta.TimerOff {
+		return clockTick()
+	}
 	return nil
 }
 
@@ -203,6 +225,7 @@ func (m Model) Init() tea.Cmd {
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case FileChangedMsg:
+		timerWasOff := m.meta.Timer == meta.TimerOff
 		m.slides = msg.Slides
 		m.meta = msg.Meta
 		if m.current >= len(m.slides) {
@@ -220,6 +243,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if err := m.renderer.ThemeError(); err != nil {
 			m.warning = err.Error()
 		}
+		if timerWasOff && m.meta.Timer != meta.TimerOff {
+			return m, clockTick()
+		}
 		return m, nil
 
 	case WarningMsg:
@@ -231,6 +257,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.height = msg.Height
 		m.renderer.SetSize(msg.Width, msg.Height)
 		return m, nil
+
+	case clockTickMsg:
+		if m.meta.Timer == meta.TimerOff {
+			return m, nil
+		}
+		return m, clockTick()
 
 	case execTickMsg:
 		if !m.execRunning || msg.run != m.execRun {
@@ -270,7 +302,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.searchMode {
 			return m.handleSearchInput(msg)
 		}
-		return m.handleNormalKey(msg)
+		next, cmd := m.handleNormalKey(msg)
+		if nm, ok := next.(Model); ok {
+			// The timer counts the talk, not the wait on the title slide
+			// before it: it starts on the first move away from that slide.
+			if nm.timerStart.IsZero() && nm.current > 0 {
+				nm.timerStart = time.Now()
+			}
+			next = nm
+		}
+		return next, cmd
 
 	}
 
@@ -377,24 +418,9 @@ func (m Model) handleNormalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.execRunning {
 			break
 		}
-		block := slide.CodeBlocks[m.selectedBlock()]
-		m.execVisible = true
-		m.execRunning = true
-		m.execOutput = ""
-		m.execErr = nil
-		m.execScroll = 0
-		m.execDuration = 0
-		m.execFollow = true
-		m.execRun++
-		m.execLive = &liveOutput{}
-		m.execStart = time.Now()
-
-		ctx, cancel := context.WithCancel(context.Background())
-		m.execCancel = cancel
-		return m, tea.Batch(
-			m.execCmd(ctx, m.execRun, m.execLive, block.Language, block.Code),
-			execTick(m.execRun),
-		)
+		var cmd tea.Cmd
+		m, cmd = m.startExec(slide.CodeBlocks[m.selectedBlock()])
+		return m, cmd
 
 	case "tab":
 		// Choose which code block ctrl+e will run.
@@ -451,6 +477,29 @@ func (m Model) handleNormalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 
 	return m, nil
+}
+
+// startExec opens the output panel and runs a code block in it.
+func (m Model) startExec(block parser.CodeBlock) (Model, tea.Cmd) {
+	m.execVisible = true
+	m.execRunning = true
+	m.execOutput = ""
+	m.execErr = nil
+	m.execScroll = 0
+	m.execDuration = 0
+	m.execFollow = true
+	m.execRun++
+	m.execLive = &liveOutput{}
+	m.execStart = time.Now()
+	m.execLang = block.Language
+	m.execCode = block.Code
+
+	ctx, cancel := context.WithCancel(context.Background())
+	m.execCancel = cancel
+	return m, tea.Batch(
+		m.execCmd(ctx, m.execRun, m.execLive, block.Language, block.Code),
+		execTick(m.execRun),
+	)
 }
 
 // execCmd returns a tea.Cmd that runs a code block asynchronously. The context
@@ -556,8 +605,17 @@ func (m Model) handleExecKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.execScroll = 0
 		m.execFollow = false
 		m.execLive = nil
+		m.execLang = ""
+		m.execCode = ""
 		// Retire the run, so its tick and its result are both ignored.
 		m.execRun++
+
+	case "r", "ctrl+e":
+		// Run the same block again, without going back to the slide. A
+		// block that is still running is left alone.
+		if !m.execRunning && m.execCode != "" {
+			return m.startExec(parser.CodeBlock{Language: m.execLang, Code: m.execCode})
+		}
 
 	case "down", "j":
 		m.execScroll++
@@ -612,6 +670,10 @@ func (m Model) execBodyHeight() int {
 	// Terminal height, less the status bar, the panel border and padding,
 	// and the title and hint lines.
 	h := m.height - 1 - execBorderStyle.GetVerticalFrameSize() - 4
+	// The command shown above the output, and the blank line under it.
+	if n := len(m.execCommandLines()); n > 0 {
+		h -= n + 1
+	}
 	if h < 1 {
 		h = 1
 	}
@@ -758,6 +820,7 @@ func (m Model) renderHelpOverlay() string {
 		{"ctrl+n / ctrl+p", "next / previous match"},
 		{"esc", "clear search"},
 		{"ctrl+e", "execute the selected code block"},
+		{"r", "run the block again, from its output"},
 		{"tab", "select another code block"},
 		{"?", "toggle this help"},
 		{"q ctrl+c", "quit"},
@@ -825,6 +888,45 @@ func (m Model) execLines() []string {
 	return strings.Split(ansi.Wrap(body, m.overlayTextWidth(), ""), "\n")
 }
 
+// execCommandMaxLines caps how much of a block is repeated above its output.
+// A command is a line or a few; a long block (a manifest in a heredoc) would
+// otherwise leave no room for what it printed.
+const execCommandMaxLines = 5
+
+// execCommandLines is the block being run, as shown at the top of the output
+// panel. The panel covers the slide, so without it the audience reads output
+// with no sign of the command that produced it.
+func (m Model) execCommandLines() []string {
+	code := strings.Trim(strings.ReplaceAll(m.execCode, "\t", "    "), "\n")
+	if strings.TrimSpace(code) == "" {
+		return nil
+	}
+	// A shell block reads as something typed at a prompt. Other languages
+	// are a program, not a command, and are shown as they are.
+	first, rest := "", ""
+	switch strings.ToLower(m.execLang) {
+	case "bash", "sh":
+		first, rest = "$ ", "  "
+	}
+
+	var out []string
+	for i, line := range strings.Split(code, "\n") {
+		prefix := rest
+		if i == 0 {
+			prefix = first
+		}
+		out = append(out, strings.Split(ansi.Wrap(prefix+line, m.overlayTextWidth(), ""), "\n")...)
+	}
+	if len(out) > execCommandMaxLines {
+		hidden := len(out) - (execCommandMaxLines - 1)
+		out = append(out[:execCommandMaxLines-1], fmt.Sprintf("%s… %d more lines", rest, hidden))
+	}
+	for i := range out {
+		out[i] = execCommandStyle.Render(out[i])
+	}
+	return out
+}
+
 // renderExecOverlay builds the code execution output panel.
 func (m Model) renderExecOverlay() string {
 	title := "Output · " + m.execStatus()
@@ -841,10 +943,7 @@ func (m Model) renderExecOverlay() string {
 	// the border and the dismiss hint before any of the output.
 	lines := m.execLines()
 	avail := m.execBodyHeight()
-	hint := "press esc to dismiss"
-	if m.execRunning {
-		hint = "press esc to cancel"
-	}
+	var hints []string
 	if len(lines) > avail {
 		maxScroll := len(lines) - avail
 		scroll := min(m.execScroll, maxScroll)
@@ -852,13 +951,25 @@ func (m Model) renderExecOverlay() string {
 			scroll = maxScroll
 		}
 		lines = lines[scroll : scroll+avail]
-		hint = fmt.Sprintf("lines %d-%d of %d · ↑/↓ scroll · esc to dismiss",
-			scroll+1, scroll+avail, len(lines)+maxScroll)
+		hints = append(hints,
+			fmt.Sprintf("lines %d-%d of %d", scroll+1, scroll+avail, len(lines)+maxScroll),
+			"↑/↓ scroll")
+	}
+	switch {
+	case m.execRunning:
+		hints = append(hints, "esc to cancel")
+	case m.execCode != "":
+		hints = append(hints, "r to run again", "esc to dismiss")
+	default:
+		hints = append(hints, "esc to dismiss")
 	}
 
-	out := execTitleStyle.Render(title) + "\n\n" +
-		strings.Join(lines, "\n") + "\n\n" +
-		execDimStyle.Render(hint)
+	out := execTitleStyle.Render(title) + "\n\n"
+	if cmd := m.execCommandLines(); len(cmd) > 0 {
+		out += strings.Join(cmd, "\n") + "\n\n"
+	}
+	out += strings.Join(lines, "\n") + "\n\n" +
+		execDimStyle.Render(strings.Join(hints, " · "))
 
 	return m.overlay(out)
 }
@@ -879,7 +990,13 @@ func (m Model) renderContent() string {
 	if m.current >= len(m.slides) {
 		return "No slides"
 	}
-	output, err := m.renderer.RenderStep(m.slides[m.current], m.currentStep)
+	return m.renderSlideStep(m.currentStep)
+}
+
+// renderSlideStep renders one reveal of the current slide, with the marker on
+// the block ctrl+e runs.
+func (m Model) renderSlideStep(step int) string {
+	output, err := m.renderer.RenderStep(m.slides[m.current], step)
 	if err != nil {
 		return fmt.Sprintf("Error rendering slide: %v", err)
 	}
@@ -1027,6 +1144,9 @@ func (m Model) View() string {
 	if m.meta.Date != "" {
 		leftParts = append(leftParts, m.meta.Date)
 	}
+	if t := m.timerText(time.Now()); t != "" {
+		leftParts = append(leftParts, t)
+	}
 	leftStatus := statusStyle.Render(strings.Join(leftParts, " - "))
 
 	var rightStatus string
@@ -1050,6 +1170,13 @@ func (m Model) View() string {
 			paging += fmt.Sprintf(" [%d/%d]", m.searchIdx+1, len(m.searchResults))
 		}
 		rightStatus = statusStyle.Render(paging)
+		// A slide that is cut off looks finished from the presenter's
+		// seat. Say so, rather than dropping its last rows unannounced.
+		if !m.execVisible && !m.helpVisible {
+			if cut := m.rowsCutOff(); cut > 0 {
+				rightStatus = warningStyle.Render(plural(cut, "row")+" cut off") + rightStatus
+			}
+		}
 	}
 
 	leftWidth := lipgloss.Width(leftStatus)
@@ -1096,7 +1223,7 @@ func (m Model) View() string {
 		// of the terminal. Centering that padded block leaves a slide with
 		// short lines visibly left of center on a wide terminal, so center
 		// what is actually drawn instead.
-		rendered = trimToContent(rendered)
+		rendered = m.centeredSlide(rendered)
 	}
 
 	content := lipgloss.Place(m.width, contentHeight-pad, hPos, vPos, rendered)
@@ -1137,49 +1264,257 @@ func (m Model) View() string {
 	return content + "\n" + statusLine
 }
 
+// timerText is the status bar timer at the given moment, or "" when the
+// deck asks for none.
+func (m Model) timerText(now time.Time) string {
+	switch m.meta.Timer {
+	case meta.TimerClock:
+		return now.Format("15:04")
+	case meta.TimerElapsed:
+		var d time.Duration
+		if !m.timerStart.IsZero() {
+			d = now.Sub(m.timerStart)
+		}
+		if d < 0 {
+			d = 0
+		}
+		sec := int(d.Seconds())
+		if sec >= 3600 {
+			return fmt.Sprintf("%d:%02d:%02d", sec/3600, sec/60%60, sec%60)
+		}
+		return fmt.Sprintf("%d:%02d", sec/60, sec%60)
+	}
+	return ""
+}
+
+// plural formats a count with a correctly pluralized noun.
+func plural(n int, noun string) string {
+	if n == 1 {
+		return fmt.Sprintf("%d %s", n, noun)
+	}
+	return fmt.Sprintf("%d %ss", n, noun)
+}
+
+// slideRows is how many rows a slide may use: the terminal, less the status
+// bar and the padding kept above top-left aligned content.
+func (m Model) slideRows() int {
+	h := m.height - 1
+	if h < 1 {
+		h = 1
+	}
+	if m.meta.Align == "top-left" && h > topPad {
+		h -= topPad
+	}
+	return h
+}
+
+// slideExtent is the space the current slide needs once fully revealed.
+func (m Model) slideExtent() (rows, cols int) {
+	if len(m.slides) == 0 || m.current >= len(m.slides) {
+		return 0, 0
+	}
+	b, ok := contentBox(m.renderSlideStep(m.slides[m.current].StepCount() - 1))
+	if !ok {
+		return 0, 0
+	}
+	if m.meta.Align == "top-left" {
+		// Nothing is trimmed in this layout, so the rows above the content
+		// and the indentation left of it take up room as well.
+		return b.first + b.height, b.indent + b.width
+	}
+	return b.height, b.width
+}
+
+// rowsCutOff is how many rows of the current slide fall below the terminal.
+func (m Model) rowsCutOff() int {
+	if m.width == 0 || m.height == 0 {
+		return 0
+	}
+	rows, _ := m.slideExtent()
+	if over := rows - m.slideRows(); over > 0 {
+		return over
+	}
+	return 0
+}
+
+// centeredSlide prepares a rendered reveal for centering.
+//
+// A reveal is centered in the box the finished slide will occupy, not in its
+// own. Centering each reveal by itself moves the heading up a little with
+// every step, because the content under it keeps growing; the audience then
+// watches the slide jump instead of watching the new line appear.
+func (m Model) centeredSlide(rendered string) string {
+	if len(m.slides) == 0 || m.current >= len(m.slides) {
+		return trimToContent(rendered)
+	}
+	last := m.slides[m.current].StepCount() - 1
+	if m.currentStep >= last {
+		return trimToContent(rendered)
+	}
+	b, ok := contentBox(m.renderSlideStep(last))
+	if !ok {
+		return trimToContent(rendered)
+	}
+	return cropTo(rendered, b, true)
+}
+
+// box is the part of a rendered slide its visible text occupies.
+type box struct {
+	first  int // index of the first line with text
+	height int // lines from the first to the last with text
+	indent int // indentation every line with text shares
+	width  int // cells from that indentation to the end of the widest line
+}
+
+// contentBox measures the box of a rendered slide. It reports false for a
+// slide with no visible text.
+func contentBox(s string) (box, bool) {
+	lines := strings.Split(s, "\n")
+	first, last := -1, -1
+	indent, right := -1, 0
+	for i, line := range lines {
+		p := strings.TrimRight(ansi.Strip(line), " ")
+		if p == "" {
+			continue
+		}
+		if first < 0 {
+			first = i
+		}
+		last = i
+		if lead := len(p) - len(strings.TrimLeft(p, " ")); indent < 0 || lead < indent {
+			indent = lead
+		}
+		if w := lipgloss.Width(p); w > right {
+			right = w
+		}
+	}
+	if first < 0 {
+		return box{}, false
+	}
+	return box{first: first, height: last - first + 1, indent: indent, width: right - indent}, true
+}
+
+// cropTo cuts a rendered slide down to a box: the lines above and below it,
+// the indentation left of it and the padding right of it are dropped. Lines
+// keep their position relative to each other.
+//
+// With hold set the result always has the box's full height and width, even
+// when s has less text than the slide the box was measured on, so that a
+// partly revealed slide is placed exactly where the finished one will be.
+func cropTo(s string, b box, hold bool) string {
+	lines := strings.Split(s, "\n")
+	out := make([]string, 0, b.height)
+	for i := b.first; i < b.first+b.height; i++ {
+		if i >= len(lines) {
+			if !hold {
+				break
+			}
+			out = append(out, "")
+			continue
+		}
+		line := lines[i]
+		if strings.TrimSpace(ansi.Strip(line)) == "" {
+			out = append(out, "")
+			continue
+		}
+		line = ansi.Truncate(line, b.indent+b.width, "")
+		line = strings.TrimRight(ansi.TruncateLeft(line, b.indent, ""), " ")
+		out = append(out, line)
+	}
+	if hold && len(out) > 0 {
+		// One line of the full width is enough to keep the block as wide
+		// as the finished slide when it is centered.
+		if w := lipgloss.Width(out[0]); w < b.width {
+			out[0] += strings.Repeat(" ", b.width-w)
+		}
+	}
+	return strings.Join(out, "\n")
+}
+
+// Misfit describes a slide that does not fit a terminal of a given size.
+type Misfit struct {
+	Slide   int    // 1-based slide number
+	Title   string // the slide's first line of text
+	Rows    int    // rows the slide needs
+	MaxRows int    // rows available for a slide
+	Columns int    // columns the slide needs
+	Wrapped int    // lines of code that are too long and get wrapped
+}
+
+// Fit lays out every slide for a terminal of the given size, exactly as the
+// presentation would, and returns the slides that do not fit: too tall, too
+// wide, or holding a line of code long enough to be wrapped.
+func Fit(slides []parser.Slide, baseDir string, mt meta.Meta, width, height int) []Misfit {
+	// Without execution no selection marker is drawn, so code lines can be
+	// compared with their source as they are.
+	m := New(slides, baseDir, mt).WithSize(width, height).WithExec(false)
+	var out []Misfit
+	for i, slide := range slides {
+		m.current = i
+		rows, cols := m.slideExtent()
+		rendered := m.renderSlideStep(slide.StepCount() - 1)
+		f := Misfit{
+			Slide:   i + 1,
+			Title:   slideTitle(slide),
+			Rows:    rows,
+			MaxRows: m.slideRows(),
+			Columns: cols,
+			Wrapped: wrappedCodeLines(slide, rendered),
+		}
+		if f.Rows > f.MaxRows || f.Columns > width || f.Wrapped > 0 {
+			out = append(out, f)
+		}
+	}
+	return out
+}
+
+// slideTitle is the first line of text on a slide, without heading markers.
+func slideTitle(slide parser.Slide) string {
+	fallback := ""
+	for _, line := range strings.Split(slide.RawMarkdown, "\n") {
+		t := strings.TrimSpace(line)
+		if t == "" {
+			continue
+		}
+		// Prefer a real title over a small label above it.
+		if strings.HasPrefix(t, "#") && !strings.HasPrefix(t, "#####") {
+			return strings.TrimSpace(strings.TrimLeft(t, "#"))
+		}
+		if fallback == "" {
+			fallback = strings.TrimSpace(strings.TrimLeft(t, "#"))
+		}
+	}
+	return fallback
+}
+
+// wrappedCodeLines counts the lines of a slide's code blocks that no longer
+// appear whole in the rendered slide, which is what wrapping does to them. A
+// wrapped line breaks a diagram or a table drawn in a code block.
+func wrappedCodeLines(slide parser.Slide, rendered string) int {
+	whole := make(map[string]bool)
+	for _, line := range strings.Split(rendered, "\n") {
+		whole[strings.TrimSpace(ansi.Strip(line))] = true
+	}
+	n := 0
+	for _, b := range slide.CodeBlocks {
+		for _, line := range strings.Split(b.Code, "\n") {
+			t := strings.TrimSpace(strings.ReplaceAll(line, "\t", "    "))
+			if t != "" && !whole[t] {
+				n++
+			}
+		}
+	}
+	return n
+}
+
 // trimToContent shrinks a rendered slide to the box its visible text occupies:
 // it drops blank lines above and below, the indentation every line shares,
 // and the trailing padding. Lines keep their position relative to each other,
 // so left-aligned text stays left-aligned inside the box.
 func trimToContent(s string) string {
-	lines := strings.Split(s, "\n")
-	plain := make([]string, len(lines))
-	for i, line := range lines {
-		plain[i] = strings.TrimRight(ansi.Strip(line), " ")
-	}
-
-	first, last := 0, len(lines)-1
-	for first <= last && plain[first] == "" {
-		first++
-	}
-	for last >= first && plain[last] == "" {
-		last--
-	}
-	if first > last {
+	b, ok := contentBox(s)
+	if !ok {
 		return s
 	}
-	lines, plain = lines[first:last+1], plain[first:last+1]
-
-	indent, width := -1, 0
-	for _, p := range plain {
-		if p == "" {
-			continue
-		}
-		if lead := len(p) - len(strings.TrimLeft(p, " ")); indent < 0 || lead < indent {
-			indent = lead
-		}
-		if w := lipgloss.Width(p); w > width {
-			width = w
-		}
-	}
-
-	for i, line := range lines {
-		if plain[i] == "" {
-			lines[i] = ""
-			continue
-		}
-		line = ansi.Truncate(line, width, "")
-		lines[i] = ansi.TruncateLeft(line, indent, "")
-	}
-	return strings.Join(lines, "\n")
+	return cropTo(s, b, false)
 }

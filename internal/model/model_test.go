@@ -771,3 +771,203 @@ func TestDismissingRetiresTheRun(t *testing.T) {
 		t.Errorf("a cancelled run delivered output after the panel closed: %q", m.execOutput)
 	}
 }
+
+func TestOutputPanelShowsTheCommand(t *testing.T) {
+	m := deckWithBlocks(t)
+	m.execVisible = true
+	m.execLang = "bash"
+	m.execCode = "kubectl get pods \\\n  --all-namespaces\n"
+	m.execOutput = "NAME   READY"
+
+	got := ansi.Strip(m.renderExecOverlay())
+	if !strings.Contains(got, "$ kubectl get pods \\") || !strings.Contains(got, "    --all-namespaces") {
+		t.Errorf("the panel should repeat the command above its output:\n%s", got)
+	}
+	if strings.Index(got, "kubectl") > strings.Index(got, "NAME") {
+		t.Errorf("the command should come before the output:\n%s", got)
+	}
+
+	// Another language is a program, not something typed at a prompt.
+	m.execLang, m.execCode = "python", "print(2)"
+	if got := ansi.Strip(m.renderExecOverlay()); strings.Contains(got, "$ ") {
+		t.Errorf("only shell blocks get a prompt:\n%s", got)
+	}
+}
+
+func TestLongCommandIsCutShortInThePanel(t *testing.T) {
+	m := deckWithBlocks(t)
+	m.execVisible = true
+	m.execLang = "bash"
+	m.execCode = "cat <<EOF\n" + strings.Repeat("line\n", 30) + "EOF"
+
+	if got := len(m.execCommandLines()); got != execCommandMaxLines {
+		t.Errorf("a long block took %d lines of the panel, want %d", got, execCommandMaxLines)
+	}
+	if got := ansi.Strip(m.renderExecOverlay()); !strings.Contains(got, "more lines") {
+		t.Errorf("the panel should say that the block continues:\n%s", got)
+	}
+}
+
+func TestPanelWithACommandStillFitsTheTerminal(t *testing.T) {
+	m := deckWithBlocks(t)
+	m.execVisible = true
+	m.execLang = "bash"
+	m.execCode = strings.Repeat("echo a long command line\n", 10)
+	m.execOutput = strings.TrimRight(strings.Repeat("line\n", 200), "\n")
+
+	out := m.renderExecOverlay()
+	if n := strings.Count(out, "\n") + 1; n > 23 {
+		t.Errorf("panel is %d lines, taller than the 23 rows above the status bar", n)
+	}
+	if !strings.Contains(out, "esc to dismiss") {
+		t.Error("the dismiss hint was cut off")
+	}
+}
+
+func TestRunAgainFromThePanel(t *testing.T) {
+	m := deckWithBlocks(t)
+	m.execVisible = true
+	m.execLang, m.execCode = "bash", "true"
+	m.execOutput = "old"
+	m.execRun = 3
+
+	if got := m.renderExecOverlay(); !strings.Contains(got, "r to run again") {
+		t.Errorf("a finished block should offer to run again:\n%s", got)
+	}
+
+	next, cmd := m.Update(key("r"))
+	m = next.(Model)
+	if cmd == nil || !m.execRunning || m.execRun != 4 || m.execOutput != "" {
+		t.Errorf("r should start a new run: running=%v run=%d output=%q", m.execRunning, m.execRun, m.execOutput)
+	}
+	if m.execCode != "true" {
+		t.Errorf("the new run should be of the same block, got %q", m.execCode)
+	}
+	if m.execCancel != nil {
+		m.execCancel()
+	}
+
+	// A block that is still running is not started a second time.
+	m.execRun = 9
+	m = send(m, "r")
+	if m.execRun != 9 {
+		t.Error("r must not start a second run while one is in flight")
+	}
+}
+
+func centeredRevealDeck(t *testing.T) Model {
+	t.Helper()
+	md := "## title\n\nfirst line\n\n<!-- pause -->\n\n- a\n- b\n- c\n- d\n\n<!-- pause -->\n\na much longer closing line than anything above it"
+	return New(parser.ParseContent(md), t.TempDir(), meta.Meta{Paging: "%d/%d", Align: "center", HeadingColor: "#a6da95"}).WithSize(80, 24)
+}
+
+// position finds the row and column of text on the screen.
+func position(t *testing.T, view, text string) (row, col int) {
+	t.Helper()
+	for i, line := range strings.Split(ansi.Strip(view), "\n") {
+		if at := strings.Index(line, text); at >= 0 {
+			return i, at
+		}
+	}
+	t.Fatalf("%q is not on screen:\n%s", text, ansi.Strip(view))
+	return 0, 0
+}
+
+func TestRevealsDoNotMoveACenteredSlide(t *testing.T) {
+	m := centeredRevealDeck(t)
+	row0, col0 := position(t, m.View(), "title")
+	for step := 1; step < 3; step++ {
+		m = send(m, "l")
+		if row, col := position(t, m.View(), "title"); row != row0 || col != col0 {
+			t.Errorf("reveal %d moved the heading from (%d,%d) to (%d,%d)", step+1, row0, col0, row, col)
+		}
+	}
+	if m.currentStep != 2 {
+		t.Fatalf("expected to be on the last reveal, at %d", m.currentStep)
+	}
+}
+
+func TestSlideThatIsCutOffSaysSo(t *testing.T) {
+	md := "# tall\n\n" + strings.Repeat("- item\n", 40)
+	m := New(parser.ParseContent(md), t.TempDir(), meta.Meta{Paging: "%d/%d", Align: "center", HeadingColor: "#a6da95"}).WithSize(80, 24)
+	if m.rowsCutOff() == 0 {
+		t.Fatal("a 40 item list does not fit 24 rows")
+	}
+	lines := strings.Split(ansi.Strip(m.View()), "\n")
+	if status := lines[len(lines)-1]; !strings.Contains(status, "cut off") {
+		t.Errorf("the status bar should say the slide is cut off: %q", status)
+	}
+
+	m = m.WithSize(80, 60)
+	lines = strings.Split(ansi.Strip(m.View()), "\n")
+	if status := lines[len(lines)-1]; strings.Contains(status, "cut off") {
+		t.Errorf("a slide that fits must not be reported: %q", status)
+	}
+}
+
+func TestFitReportsSlidesThatDoNotFit(t *testing.T) {
+	md := strings.Join([]string{
+		"# fine\n\nshort",
+		"## tall\n\n" + strings.Repeat("- item\n", 40),
+		"## wide code\n\n```text\n" + strings.Repeat("x", 100) + "\n```",
+	}, "\n\n---\n\n")
+	mt := meta.Meta{Paging: "%d/%d", Align: "center", HeadingColor: "#a6da95"}
+
+	got := Fit(parser.ParseContent(md), t.TempDir(), mt, 80, 24)
+	if len(got) != 2 {
+		t.Fatalf("expected the tall and the wide slide, got %+v", got)
+	}
+	if got[0].Slide != 2 || got[0].Title != "tall" || got[0].Rows <= got[0].MaxRows {
+		t.Errorf("tall slide reported as %+v", got[0])
+	}
+	if got[1].Slide != 3 || got[1].Wrapped != 1 {
+		t.Errorf("wide slide reported as %+v", got[1])
+	}
+
+	if got := Fit(parser.ParseContent(md), t.TempDir(), mt, 200, 80); len(got) != 0 {
+		t.Errorf("everything fits a large terminal, got %+v", got)
+	}
+}
+
+func TestTimerStartsWhenTheTalkDoes(t *testing.T) {
+	m := newModel(t, "---\ntimer: elapsed\n---\n# one", "# two", "# three")
+	m = m.WithSize(80, 24)
+	if m.Init() == nil {
+		t.Error("a deck with a timer should keep the status bar ticking")
+	}
+	if got := m.timerText(time.Now().Add(time.Hour)); got != "0:00" {
+		t.Errorf("the timer should wait on the first slide, got %q", got)
+	}
+
+	m = send(m, "l")
+	if m.timerStart.IsZero() {
+		t.Fatal("leaving the first slide should start the timer")
+	}
+	if got := m.timerText(m.timerStart.Add(754 * time.Second)); got != "12:34" {
+		t.Errorf("timer = %q, want 12:34", got)
+	}
+	if got := m.timerText(m.timerStart.Add(3725 * time.Second)); got != "1:02:05" {
+		t.Errorf("timer = %q, want 1:02:05", got)
+	}
+	lines := strings.Split(ansi.Strip(m.View()), "\n")
+	if status := lines[len(lines)-1]; !strings.Contains(status, "0:0") {
+		t.Errorf("the status bar should show the timer: %q", status)
+	}
+
+	// Going back to the first slide does not restart it.
+	start := m.timerStart
+	m = send(m, "h", "l")
+	if !m.timerStart.Equal(start) {
+		t.Error("the timer restarted")
+	}
+}
+
+func TestNoTimerByDefault(t *testing.T) {
+	m := newModel(t, "# one", "# two").WithSize(80, 24)
+	if m.Init() != nil {
+		t.Error("a deck without a timer should not tick")
+	}
+	if got := m.timerText(time.Now()); got != "" {
+		t.Errorf("unexpected timer %q", got)
+	}
+}

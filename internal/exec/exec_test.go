@@ -201,3 +201,16 @@ func TestRunStreamingRespectsTheOutputLimit(t *testing.T) {
 		t.Errorf("live copy holds %d bytes, want %d", got, maxOutputBytes)
 	}
 }
+
+// TestCommandReadingStdinDoesNotEatTheScript guards against passing the block
+// on the shell's standard input: a command that reads input would then
+// consume the lines after it, and they would silently never run.
+func TestCommandReadingStdinDoesNotEatTheScript(t *testing.T) {
+	r := Run("bash", "read line\necho \"read got: [$line]\"\necho after")
+	if r.Err != nil {
+		t.Fatal(r.Err)
+	}
+	if want := "read got: []\nafter\n"; r.Output != want {
+		t.Errorf("output = %q, want %q", r.Output, want)
+	}
+}

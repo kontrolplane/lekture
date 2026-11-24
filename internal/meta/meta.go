@@ -18,7 +18,18 @@ type Meta struct {
 	Align        string `yaml:"align" json:"align"`               // "top-left" (default) or "center"
 	HeadingColor string `yaml:"headingColor" json:"headingColor"` // hex color for headings, e.g. "#a6da95"
 	ExecTimeout  string `yaml:"execTimeout" json:"execTimeout"`   // limit for one code block, e.g. "10s" or "2m"
+	Timer        string `yaml:"timer" json:"timer"`               // "elapsed", "clock", or empty for none
 }
+
+// The values of Meta.Timer.
+const (
+	// TimerOff shows no timer in the status bar.
+	TimerOff = ""
+	// TimerElapsed shows how long the presentation has been running.
+	TimerElapsed = "elapsed"
+	// TimerClock shows the time of day.
+	TimerClock = "clock"
+)
 
 const (
 	defaultPaging       = "Slide %d / %d"
@@ -63,6 +74,9 @@ func Merge(base, override Meta) Meta {
 	if override.ExecTimeout != "" {
 		out.ExecTimeout = override.ExecTimeout
 	}
+	if override.Timer != "" {
+		out.Timer = override.Timer
+	}
 	return out
 }
 
@@ -85,6 +99,14 @@ func (m *Meta) defaults() {
 		m.HeadingColor = defaultHeadingColor
 	}
 	m.ExecTimeout = normalizeExecTimeout(m.ExecTimeout).String()
+	// "off" and "none" are accepted so a deck can switch off a timer that
+	// the user config turned on. Anything unrecognized shows no timer.
+	switch t := strings.ToLower(strings.TrimSpace(m.Timer)); t {
+	case TimerElapsed, TimerClock:
+		m.Timer = t
+	default:
+		m.Timer = TimerOff
+	}
 	m.Author = stripControl(m.Author)
 	m.Date = stripControl(m.Date)
 	m.Paging = stripControl(m.Paging)

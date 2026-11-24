@@ -34,6 +34,7 @@ usage:
   lekture <presentation.md>
   lekture serve <presentation.md> [--port PORT] [--host HOST] [--allow-exec]
   lekture dump <presentation.md> [--width N]
+  lekture check <presentation.md> [--columns N] [--rows N]
   lekture export <presentation.md> [--output FILE]
   lekture window <presentation.md> [--columns N]
   cat presentation.md | lekture
@@ -49,6 +50,11 @@ serve flags:
 
 dump flags:
   --width N        render width (default: terminal width, or 100)
+
+check flags:
+  --columns N      terminal width to check against (default 100)
+  --rows N         terminal height to check against (default 26, which is
+                   what a 16:9 screen shows at 100 columns)
 
 export flags:
   --output FILE    write to FILE instead of stdout
@@ -80,6 +86,8 @@ func run() error {
 			return runServe()
 		case "dump":
 			return runDump()
+		case "check":
+			return runCheck()
 		case "export":
 			return runExport()
 		case "window":
@@ -254,6 +262,59 @@ func runDump() error {
 		}
 		fmt.Fprintln(out, text)
 	}
+	return nil
+}
+
+// runCheck reports the slides that do not fit a terminal of a given size, so
+// a deck can be checked before it is on a projector.
+func runCheck() error {
+	fs := flag.NewFlagSet("check", flag.ContinueOnError)
+	fs.SetOutput(os.Stderr)
+	fs.Usage = func() { fmt.Fprint(os.Stderr, usage) }
+
+	columns := fs.Int("columns", 100, "terminal width")
+	rows := fs.Int("rows", 26, "terminal height")
+
+	path, err := parseArgs(fs, os.Args[2:])
+	if err != nil {
+		return err
+	}
+	if *columns < 1 || *rows < 2 {
+		return errors.New("--columns must be at least 1 and --rows at least 2")
+	}
+
+	d, err := loadDeck(path)
+	if err != nil {
+		return err
+	}
+	if d.Warning != nil {
+		fmt.Fprintf(os.Stderr, "warning: %v\n", d.Warning)
+	}
+	if d.Empty() {
+		return d.EmptyError()
+	}
+
+	misfits := model.Fit(d.Slides, d.BaseDir, d.Meta, *columns, *rows)
+	for _, f := range misfits {
+		var problems []string
+		if over := f.Rows - f.MaxRows; over > 0 {
+			problems = append(problems, fmt.Sprintf("%d rows tall, %d more than the %d that fit", f.Rows, over, f.MaxRows))
+		}
+		if over := f.Columns - *columns; over > 0 {
+			problems = append(problems, fmt.Sprintf("%d columns wide, %d more than fit", f.Columns, over))
+		}
+		if f.Wrapped > 0 {
+			problems = append(problems, plural(f.Wrapped, "line")+" of code wrapped")
+		}
+		fmt.Printf("slide %d  %s\n    %s\n", f.Slide, f.Title, strings.Join(problems, "; "))
+	}
+
+	size := fmt.Sprintf("%dx%d", *columns, *rows)
+	if len(misfits) > 0 {
+		fmt.Printf("\n%d of %d slides do not fit %s\n", len(misfits), len(d.Slides), size)
+		return errSilent
+	}
+	fmt.Printf("all %d slides fit %s\n", len(d.Slides), size)
 	return nil
 }
 
