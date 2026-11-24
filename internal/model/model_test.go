@@ -971,3 +971,20 @@ func TestNoTimerByDefault(t *testing.T) {
 		t.Errorf("unexpected timer %q", got)
 	}
 }
+
+// Centering places every line by its own width, so a cropped slide has to
+// keep all its lines equally wide or its rows drift apart.
+func TestCropToKeepsLinesEquallyWide(t *testing.T) {
+	rendered := "\n  wide line here  \n      short\n  mid line\n"
+	b, ok := contentBox(rendered)
+	if !ok {
+		t.Fatal("no content box")
+	}
+	for _, hold := range []bool{false, true} {
+		for i, line := range strings.Split(cropTo(rendered, b, hold), "\n") {
+			if w := lipgloss.Width(line); w != b.width {
+				t.Errorf("hold=%v line %d is %d wide, want %d: %q", hold, i, w, b.width, line)
+			}
+		}
+	}
+}

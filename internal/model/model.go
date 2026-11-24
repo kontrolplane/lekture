@@ -1418,15 +1418,19 @@ func cropTo(s string, b box, hold bool) string {
 			continue
 		}
 		line = ansi.Truncate(line, b.indent+b.width, "")
-		line = strings.TrimRight(ansi.TruncateLeft(line, b.indent, ""), " ")
+		line = ansi.TruncateLeft(line, b.indent, "")
+		// Every line is padded to the box's width. Centering places each
+		// line by its own width, so lines of different widths would each
+		// land at a different column and the block would lose its shape.
+		if w := lipgloss.Width(line); w < b.width {
+			line += strings.Repeat(" ", b.width-w)
+		}
 		out = append(out, line)
 	}
-	if hold && len(out) > 0 {
-		// One line of the full width is enough to keep the block as wide
-		// as the finished slide when it is centered.
-		if w := lipgloss.Width(out[0]); w < b.width {
-			out[0] += strings.Repeat(" ", b.width-w)
-		}
+	if hold && len(out) > 0 && out[0] == "" {
+		// A blank first line still has to carry the full width, to keep the
+		// block as wide as the finished slide when it is centered.
+		out[0] = strings.Repeat(" ", b.width)
 	}
 	return strings.Join(out, "\n")
 }
