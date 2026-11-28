@@ -10,8 +10,19 @@ import (
 	"github.com/kontrolplane/lekture/internal/render"
 )
 
+// exampleDecks are the decks shipped in example/, each of which has to parse
+// and render.
+var exampleDecks = []string{"presentation.md", "kubernetes.md", "helm.md"}
+
 func TestExampleDeckRenders(t *testing.T) {
-	data, err := os.ReadFile("../../example/presentation.md")
+	for _, name := range exampleDecks {
+		t.Run(name, func(t *testing.T) { renderExampleDeck(t, name) })
+	}
+}
+
+func renderExampleDeck(t *testing.T, name string) {
+	t.Helper()
+	data, err := os.ReadFile("../../example/" + name)
 	if err != nil {
 		t.Skip("example deck not reachable")
 	}

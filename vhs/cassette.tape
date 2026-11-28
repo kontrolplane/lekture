@@ -1,8 +1,17 @@
 # Lekture — terminal-based presentation tool
-# Generates the main demo GIF for the README.
+# Generates the demo GIF of example/presentation.md, the deck that explains
+# lekture itself.
 #
 # Right advances a reveal before it advances a slide, so slides with
 # "<!-- pause -->" markers take more than one press.
+#
+# Slide map:
+#   1 title                              7 running code (2 code blocks)
+#   2 what this deck covers (3 reveals)  8 output while it runs
+#   3 a deck is one markdown file        9 moving around      13 themes
+#   4 what a slide can hold             10 searching          14 on a big screen
+#   5 images                            11 frontmatter        15 not in the room
+#   6 revealing a slide (3 reveals)     12 your own defaults  16 thank you
 
 Output assets/cassette.gif
 
@@ -12,6 +21,7 @@ Set FontSize 16
 Set Width 1280
 Set Height 800
 Set Padding 20
+Set WaitTimeout 1m
 
 # Build and start the presentation
 Hide
@@ -21,9 +31,9 @@ Sleep 2s
 Show
 
 # -- Slide 1: title --
-Sleep 4s
+Sleep 3s
 
-# -- Slide 2: agenda, revealed in three stages --
+# -- Slide 2: what this deck covers, revealed in three stages --
 Right
 Sleep 2500ms
 Right
@@ -31,45 +41,57 @@ Sleep 2500ms
 Right
 Sleep 3s
 
-# -- Slide 3: how this deck is written --
+# -- Slide 3: a deck is one markdown file --
 Right
 Sleep 5s
 
-# -- Slide 4: what is a vpc? --
+# -- Slide 4: what a slide can hold --
 Right
 Sleep 4s
 
-# -- Slide 5: vpc building blocks --
+# -- Slide 5: images --
 Right
 Sleep 4s
 
-# -- Slide 6: subnets in practice --
+# -- Slide 6: revealing a slide in stages --
+Right
+Sleep 2500ms
+Right
+Sleep 2500ms
 Right
 Sleep 3s
 
-# -- Slide 7: cidr planning --
-Right
-Sleep 3s
-
-# -- Slide 8: vpc-attached lambda, two runnable blocks --
+# -- Slide 7: running code, two runnable blocks --
 Right
 Sleep 4s
 
-# Pick the second block, then run the first
+# Move the mark to the second block, and back to the first
 Tab
 Sleep 2s
 Tab
 Sleep 1500ms
 
-# Execute the Go handler
+# Run the Go program
 Ctrl+E
-Sleep 5s
+Wait+Screen /exit 0/
+Sleep 4s
 Escape
-Sleep 1500ms
+Sleep 1s
 
-# -- Slides 9 to 14 --
+# -- Slide 8: output while it runs --
 Right
 Sleep 3s
+Ctrl+E
+Wait+Screen /exit 0/
+Sleep 2s
+Escape
+Sleep 1s
+
+# -- Slides 9 to 15 --
+Right
+Sleep 4s
+Right
+Sleep 4s
 Right
 Sleep 3s
 Right
@@ -84,7 +106,7 @@ Sleep 3s
 # -- Search --
 Type "/"
 Sleep 1s
-Type "subnet"
+Type "stage"
 Sleep 1s
 Enter
 Sleep 3s

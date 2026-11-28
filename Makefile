@@ -7,7 +7,7 @@ COMMIT  := $(shell git rev-parse --short HEAD 2>/dev/null || echo none)
 DATE    := $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
 LDFLAGS := -s -w -X main.version=$(VERSION) -X main.commit=$(COMMIT) -X main.date=$(DATE)
 
-.PHONY: build run clean tidy test race fmt vet check check-vhs release-check release-snapshot gif screenshots assets
+.PHONY: build run clean tidy test race fmt vet check check-vhs release-check release-snapshot gif gif-kubernetes screenshots assets
 
 build:
 	$(GO) build -ldflags "$(LDFLAGS)" -o $(BINARY_NAME) .
@@ -66,5 +66,12 @@ gif: check-vhs
 
 screenshots: check-vhs
 	$(VHS) vhs/screenshots.tape
+
+# gif-kubernetes records example/kubernetes.md with its commands run for
+# real, so it needs docker, k3d and kubectl. It creates a k3d cluster named
+# "lekture", deletes it again, and uses a temporary kubeconfig. It is not
+# part of "assets" because of what it needs.
+gif-kubernetes: check-vhs
+	$(VHS) vhs/kubernetes.tape
 
 assets: gif screenshots

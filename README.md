@@ -6,6 +6,8 @@
 
 `lekture` is a terminal user interface (tui) application designed for presenting markdown-based slideshows. It provides an intuitive and efficient way to create and deliver presentations directly from the terminal. With Lekture, you can render markdown with full formatting, display inline images, reveal a slide in stages, execute code blocks, serve presentations over SSH, and export a deck to a self-contained html file, making it an essential tool for engineers who prefer working within a terminal environment.
 
+<img width="1500" alt="lekture demo" src="./assets/kubernetes.gif">
+
 ## installation
 
 ```bash
@@ -186,6 +188,18 @@ connections are **not authenticated**. code execution is therefore disabled for 
 
 `lekture` adapts to the terminal's color support: truecolor, 256-color, and 16-color terminals each get an appropriate rendering, and [`NO_COLOR`](https://no-color.org/) is honored. where color is unavailable, inline images are replaced by their alt text rather than a screenful of block characters.
 
+## examples
+
+three decks ship in `example/`:
+
+| deck | what it is |
+| --- | --- |
+| `example/presentation.md` | how to use lekture, written with the features it describes: an image, reveals, runnable code, keys, configuration, sharing |
+| `example/kubernetes.md` | kubernetes from the ground up: a cluster, a pod, a deployment, self-healing, scaling, a service, a rolling update |
+| `example/helm.md` | helm by writing a chart: a template, values, then install, upgrade, rollback and package |
+
+the kubernetes and helm decks are meant to be run, not only read: every command on a slide is a `bash` block, and `ctrl+e` runs it against a real cluster. they need docker, [k3d](https://k3d.io) and `kubectl`, and the helm deck needs [helm](https://helm.sh) as well. each deck creates a local k3d cluster named `lekture` and deletes it on its last slides, and the helm deck writes its chart to `/tmp/lekture` and removes that too. every command names that cluster's context, and the cluster is created without switching your current context, so a slide never acts on whatever cluster your kubeconfig points at. the recording at the top of this readme is `example/kubernetes.md`, with its commands run as they are shown.
+
 ## demonstration
 
 `slide overview`
@@ -236,6 +250,14 @@ go install github.com/charmbracelet/vhs@v0.11.0
 ```
 
 `make assets` refuses to run against 0.12.0 rather than appearing to succeed.
+
+the kubernetes gif has a tape of its own, because recording it runs the deck's commands for real:
+
+```bash
+make gif-kubernetes
+```
+
+it needs docker, k3d and `kubectl`, creates the `lekture` cluster and deletes it again, and points `KUBECONFIG` at a temporary file so your own kubeconfig is left alone.
 
 ## keybindings
 

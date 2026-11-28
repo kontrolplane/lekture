@@ -47,6 +47,12 @@ archives:
       - README.md
       - src: example/presentation.md
         dst: example
+      - src: example/logo.png
+        dst: example
+      - src: example/kubernetes.md
+        dst: example
+      - src: example/helm.md
+        dst: example
 
 checksum:
   name_template: checksums.txt

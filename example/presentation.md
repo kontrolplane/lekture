@@ -7,40 +7,37 @@ headingColor: "#F4E8C1"
 # align: center         # or the default, top-left
 ---
 
-# aws networking deep dive
+# lekture
 
-### vpc, route 53, cloudfront & elb
-
----
-
-## agenda
-
-1. **vpc** — your private network in the cloud
-2. **security** — security groups, nacls, traffic filtering
-
-<!-- pause -->
-
-3. **load balancing** — alb, nlb, and glb
-4. **cloudfront** — edge caching and content delivery
-
-<!-- pause -->
-
-5. **route 53** — dns, health checks, routing policies
-6. **reference architecture** — tying it all together
-
-> real cidr examples, production gotchas, and cost breakdowns throughout.
+### markdown slides, presented in your terminal
 
 ---
 
-## how this deck is written
+## what this deck covers
 
-plain markdown in one file. slides are split on a line of three dashes:
+1. **writing** — one markdown file, and what a slide can hold
+2. **revealing** — showing a slide in stages
+
+<!-- pause -->
+
+3. **running code** — executing a block without leaving the slide
+4. **moving around** — keys, counts and search
+
+<!-- pause -->
+
+5. **configuring** — frontmatter, your own defaults, themes
+6. **sharing** — a big screen, ssh, html and plain text
+
+> every slide is written with the thing it describes. keep `example/presentation.md` open next to it.
+
+---
+
+## a deck is one markdown file
 
 ```markdown
 ---
-author: levi van noort
+author: your name
 paging: "%d / %d"
-headingColor: "#F4E8C1"
 ---
 
 # first slide
@@ -56,301 +53,235 @@ headingColor: "#F4E8C1"
 - revealed on the next keypress
 ```
 
-- a `---` **inside** a fenced block is content, not a separator — that is why this slide holds together
-- `<!-- pause -->` reveals a slide in stages; the counter shows `(2/3)`
-- press `?` at any time for the full keymap
+- a line that holds only `---` starts the next slide
+- the block between the first two is **frontmatter**: settings for the deck
+- a `---` **inside** a fenced block is content, which is why this slide holds together
 
 ---
 
-## what is a vpc?
+## what a slide can hold
 
-your own logically isolated network inside aws. nothing gets in or out unless you allow it.
+whatever markdown can say: **bold**, *italic*, `inline code` and [links](https://github.com/kontrolplane/lekture).
 
-- scoped to one **region**, spans all its **availability zones**
-- you pick the **cidr block**, carve **subnets**, wire up **route tables**
-- every account gets a default vpc — **never** use it for real workloads
-- dual-stack: **ipv4**, **ipv6**, or both at once
+| element | written as                         |
+|---------|------------------------------------|
+| heading | `# title` down to `###### label`   |
+| list    | `- item` or `1. item`              |
+| table   | pipes and dashes, like this one    |
+| quote   | `> text`                           |
+| code    | three backticks and a language     |
+| image   | a link with `!` in front of it     |
 
-the vpc itself is free. you pay for what you attach: nat gateways, vpn tunnels, transit gateway, cross-az transfer.
+- an image is drawn on the slide itself: the next slide has one
 
-> an intern once exposed an rds instance on the default vpc. a custom vpc with no igw on its private subnets would have prevented it entirely.
-
----
-
-## vpc building blocks
-
-| component            | role                                       |
-|----------------------|--------------------------------------------|
-| **cidr block**       | ip range, e.g. `10.0.0.0/16`               |
-| **subnet**           | a slice of the range, pinned to one az     |
-| **route table**      | decides where packets go next              |
-| **internet gateway** | two-way door to the internet               |
-| **nat gateway**      | outbound-only door for private subnets     |
-| **security group**   | stateful firewall, per-interface           |
-| **nacl**             | stateless firewall, per-subnet             |
-| **vpc endpoint**     | private path to aws services               |
-| **peering**          | direct 1:1 vpc link (non-transitive)       |
-| **transit gateway**  | hub-and-spoke router for many vpcs         |
-
-> **watch the nat bill** — `$0.045/hr` + `$0.045/GB`. a busy subnet runs hundreds a month. gateway endpoints for s3 and dynamodb are free.
+> a quote sets one sentence apart. use it for the one to remember.
 
 ---
 
-## subnets in practice
+## images
 
-**public subnet** — default route `0.0.0.0/0` points to an internet gateway.
+![kontrolplane](logo.png)
 
-- hosts albs, bastion hosts, nat gateways
-- instances need a public or elastic ip to be reachable
-- set `MapPublicIpOnLaunch` so you don't forget per-instance
-
-**private subnet** — default route goes to a nat gateway, or nowhere.
-
-- hosts app servers, databases, lambda, ecs tasks
-- reaches the internet outbound via nat for patches and apis
-- use free **gateway endpoints** for s3/dynamodb
-
-> run **three of each** across `eu-west-1a/b/c`. the alb needs two azs minimum — three gives every tier az-level fault tolerance.
+- written as a link with `!` in front of it: the alt text, then the file
+- a png, jpeg or gif, found from where the deck is
+- drawn as large as fits the slide's width and half the terminal's height
+- a terminal without colour shows the alt text instead: `kontrolplane`
 
 ---
 
-## cidr planning
+## revealing a slide in stages
 
-rush this and it bites you later.
+put `<!-- pause -->` on a line of its own. everything after it waits for a keypress.
 
-| block           | size   | used for                  |
-|-----------------|--------|---------------------------|
-| `10.0.0.0/16`   | 65,536 | the vpc itself            |
-| `10.0.0.0/20`   | 4,096  | public subnets            |
-| `10.0.48.0/20`  | 4,096  | private subnets           |
-| `10.0.96.0/20`  | 4,096  | data tier (rds, cache)    |
-| `10.0.144.0/20` | 4,096  | spare — future growth     |
+- this line was here from the start
 
-- aws reserves **5 ips** per subnet (`.0`–`.3` and the last)
-- ranges span `/16` down to `/28` — nothing larger
-- **you can't shrink or change** a cidr after creation
-- avoid `172.17.0.0/16` — docker's default, it conflicts
-- peering or going on-prem? cidrs **must not overlap**
+<!-- pause -->
+
+- this one took a keypress, and the counter now reads `(2/3)`
+
+<!-- pause -->
+
+- this is the last stage, so the next keypress moves to the next slide
+
+> going back lands on the *last* stage of a slide, so nothing the audience saw is hidden again.
 
 ---
 
-## vpc-attached lambda
+## running code
 
-to reach rds, elasticache, or anything inside a vpc, a lambda has to run *inside* it. press `ctrl+e` to see it from the function's perspective:
+`ctrl+e` runs the marked block and shows what it prints. `r` runs it again, `esc` closes the output.
 
 ```go
 package main
 
-import "fmt"
+import (
+	"fmt"
+	"runtime"
+)
 
 func main() {
-	subnets := []string{"subnet-0a1b2c", "subnet-4e5f6a", "subnet-8c9d0e"}
-	sg := "sg-lambda-private"
-
-	fmt.Println("lambda vpc configuration")
-	fmt.Printf("   subnets:         %v\n", subnets)
-	fmt.Printf("   security group:  %s\n", sg)
-	fmt.Printf("   enis attached:   %d (one per subnet)\n", len(subnets))
+	fmt.Println("hello from a slide")
+	fmt.Printf("   go:        %s\n", runtime.Version())
+	fmt.Printf("   platform:  %s/%s\n", runtime.GOOS, runtime.GOARCH)
 }
 ```
 
-more than one runnable block? press `tab` to choose which `ctrl+e` runs:
+more than one block on a slide? `tab` moves the mark to the next one:
 
 ```bash
-echo "cold start: one eni per subnet, reused across invocations"
+echo "a block runs in a directory of its own: $(pwd)"
 ```
 
 ---
 
-## security groups
+## output while it runs
 
-**stateful** firewalls on each network interface. allow traffic in, and the reply is allowed back out automatically.
+the output appears as it is written, so a slow command shows its progress.
 
-- **allow rules only** — there is no explicit deny
-- reference another security group as a source, not just ips
-- default: deny all inbound, allow all outbound
-- limit: 5 sgs per eni, 60 rules each (raisable to 200)
+```bash
+for step in 1 2 3 4 5; do
+  echo "step $step of 5"
+  sleep 1
+done
+```
 
-| sg        | inbound          | outbound              |
-|-----------|------------------|-----------------------|
-| `sg-alb`  | `0.0.0.0/0`:443  | `sg-app`:8080         |
-| `sg-app`  | `sg-alb`:8080    | `sg-db`:5432, `:443`  |
-| `sg-db`   | `sg-app`:5432    | —                     |
+- runs go, python, javascript, ruby, lua, elixir, bash, c and rust
+- a block is stopped after **10 seconds**: raise that with `execTimeout` in the frontmatter
+- `esc` on a block that is still running cancels it
+- a fence in any other language is highlighted, and `tab` skips it
 
-> each tier accepts traffic only from the tier above it — by sg reference, not ip. move an instance and the rules follow it.
-
----
-
-## nacls — when you need them
-
-the **stateless** firewall at the subnet level. most teams never touch them, and that's fine.
-
-- rules have **priority numbers** — lowest wins, first match applies
-- support **allow *and* deny** — the only way to block an ip in aws
-- stateless: allow inbound 443 *and* outbound ephemeral ports (1024–65535) for the reply
-- one per subnet; the default allows everything
-
-reach for them only when:
-
-- **blocking a bad ip range** — sgs can't deny, nacls can
-- **compliance** demands subnet-level filtering
-- **defense in depth** — a coarse outer layer over sgs
-
-> no such reason? stick with security groups. stateful is far easier to reason about.
+> running a block runs it on your machine. treat a deck you did not write like a script you did not write.
 
 ---
 
-## elastic load balancing
+## moving around
 
-all three sit in your public subnets and forward to private targets.
+| key                           | does                                 |
+|-------------------------------|--------------------------------------|
+| `→` `l` `j` `space` `enter`   | next stage, then the next slide      |
+| `←` `h` `k` `backspace`       | previous stage, then the slide before|
+| `gg` `home`                   | first slide                          |
+| `G` `end`                     | last slide                           |
+| `5j` `3k`                     | move that many slides                |
+| `12G`                         | jump to slide 12                     |
+| `?`                           | every key, on top of the slide       |
+| `q`                           | quit                                 |
 
-| type    | layer | protocols       | strength                        |
-|---------|-------|-----------------|---------------------------------|
-| **alb** | 7     | http(s), grpc   | content routing, sticky sessions|
-| **nlb** | 4     | tcp, udp, tls   | millions of rps, static ips     |
-| **glb** | 3     | ip packets      | inline firewalls, ids           |
-
-### alb
-
-- route by **host**, **path**, **query**, or **method**
-- **weighted target groups** for canary deploys
-- native **cognito** auth and **slow start** ramping
-
-### nlb
-
-- preserves client source ip; supports **elastic ips**
-- can front an alb for static ips *and* l7 routing
-- **privatelink** — expose a service to other vpcs
-
-> both do cross-zone balancing and connection draining.
+> a count or a jump moves whole slides, and starts each at its first stage.
 
 ---
 
-## cloudfront
+## searching
 
-a cdn with 450+ edge locations — not just static files, but apis, websocket, and video too.
+press `/`, type what you are looking for, press `enter`.
 
-### why bother
+| key      | does                                   |
+|----------|----------------------------------------|
+| `ctrl+n` | next slide that matches                |
+| `ctrl+p` | previous slide that matches            |
+| `esc`    | clear the search                       |
 
-- **latency** — users hit an edge 20ms away, not a region 200ms away
-- **tls** terminates at the edge, saving a full round trip
-- **shield standard** — free ddos protection, zero config
-- **cost** — edge transfer beats direct-from-ec2
+- the search is a **regular expression**: `ssh|html` finds either word
+- end it with `/i` to ignore case: `markdown/i`
 
-### s3 origin
-
-- **origin access control** keeps the bucket fully private
-- automatic gzip and brotli compression
-- `max-age=31536000, immutable` on hashed assets
-
-### alb origin
-
-- forward needed headers via an **origin request policy**
-- validate a secret header so nobody hits the alb directly
-- **origin groups** for cross-region failover
-
-### functions vs lambda@edge
-
-- **cloudfront functions** — viewer events, 1ms, js, dirt cheap
-- **lambda@edge** — all events, 30s, node/python, powerful
+> try it here: `/stage` and then `ctrl+n` a few times.
 
 ---
 
-## what is route 53?
+## frontmatter
 
-aws runs one of the world's largest authoritative dns networks. named for port 53.
+```yaml
+---
+author: your name          # left of the status bar
+date: YYYY-MM-dd           # next to it, today in this format
+paging: "%d / %d"          # the slide counter, on the right
+theme: kontrolplane        # a bundled name, a file or a url
+align: center              # or top-left, which is the default
+headingColor: "#F4E8C1"    # the headings take their colours from it
+execTimeout: 30s           # how long one code block may run
+timer: elapsed             # time since the first slide, or clock
+---
+```
 
-1. **domain registration** — buy domains in-console, whois privacy included
-2. **dns hosting** — anycast hosted zones with a **100% availability sla** (their only one)
-3. **health checks & routing** — steer traffic away from failures automatically
-
-> **$0.50/mo** per hosted zone, **$0.40** per million queries. alias queries to aws resources are **free**.
+- every field is optional, and a value that makes no sense falls back to its default
+- save the file and the deck reloads, on the slide you were on
 
 ---
 
-## dns records that matter
+## your own defaults
 
-| type            | what it does                          |
-|-----------------|---------------------------------------|
-| **a** / **aaaa**| name → ipv4 / ipv6 address            |
-| **cname**       | name → another name (not at apex)     |
-| **alias**       | aws-only: name → an aws resource      |
-| **mx**          | routes email to a mail server         |
-| **txt**         | spf, dkim, domain verification        |
-| **srv**         | service discovery (port + priority)   |
-| **ns**          | delegates a subdomain                 |
+the same fields, for every deck you present, in `~/.config/lekture/config.yaml`:
 
-**alias vs cname** — the one everyone trips on:
+```yaml
+author: your name
+theme: kontrolplane
+align: center
+```
 
-- **cname** maps name → name, and **cannot** sit at the zone apex
-- **alias** maps the apex → an aws resource, resolves server-side (faster), and is **free**
+```text
+built-in defaults   ▶   config file   ▶   frontmatter
+```
 
-> pointing at an alb, cloudfront, s3, or api gateway? always use alias.
+- each one overrides the one to its left, so a deck always wins over your defaults
+- a key the config file does not know is an error, so a typo is reported instead of ignored
 
 ---
 
-## routing policies
+## themes
 
-dns as a traffic-management tool.
+| `theme:`               | gives you                                   |
+|------------------------|---------------------------------------------|
+| `default`              | the built-in look, which this deck uses     |
+| `kontrolplane`         | navy, cream and a goldenrod accent          |
+| `./theme.json`         | your own file, found relative to the deck   |
+| `https://…/theme.json` | a file fetched from a url                   |
 
-- **simple** — one record, one answer, no health checks
-- **failover** — primary/secondary on a health check
-- **weighted** — split by percentage; 95% release, 5% canary
-- **latency** — route to the lowest-latency region automatically
-- **geolocation** — route by country or continent (great for gdpr)
-- **geoproximity** — continuous, with a bias to drain regions
-- **multivalue** — up to 8 healthy ips; dns-level balancing
+- `headingColor` changes the headings without touching the rest
+- a theme that fails to load falls back to the default, and the status bar says why
 
-> flip a canary's weight to 0% the instant error rates spike — no deploy needed.
-
----
-
-## reference architecture
-
-**route 53 → cloudfront → alb → ecs** in private subnets.
-
-- **route 53** alias on `app.example.com` → the cloudfront distribution
-- **cloudfront** terminates tls at the edge, caches assets, forwards `/api/*`
-- **alb** in 3 public subnets, validates the `X-CloudFront-Secret` header
-- **ecs fargate** in 3 private subnets — port 8080 from `sg-alb` only
-- **rds aurora** in 3 data subnets — port 5432 from `sg-app` only
-- **nat gateway** in one az (cost trade-off; three for critical workloads)
-- **gateway endpoint** (s3) + **interface endpoint** (ecr) keep traffic off nat
-- **private hosted zone** maps `db.internal` to the aurora writer
-
-> total networking cost on this setup: roughly **$120/month**.
+> uncomment `theme: kontrolplane` at the top of this file and save. the deck reloads in the new colours.
 
 ---
 
-## private dns & hybrid connectivity
+## on a big screen
 
-### private hosted zones
+```shell
+lekture window presentation.md
+lekture check presentation.md
+```
 
-dns that resolves only from inside your vpc:
+- **window** opens the deck fullscreen in a window of its own, with the font sized so the screen is 100 columns wide. `--columns 90` makes the text bigger. it needs ghostty on macos
+- **check** lists the slides that do not fit a terminal of 100 columns by 26 rows, and exits with status 1 when one does not, so it can run in ci
+- a slide that is cut off while you present says so in the status bar
 
-- `api.internal → 10.0.48.10`
-- `db.internal → 10.0.96.50`
-- `cache.internal → 10.0.96.100`
+> a terminal cannot scale text. fewer columns is the only way to bigger letters.
 
-associate one zone with multiple vpcs, even **cross-account**.
+---
 
-### requirements
+## for people who are not in the room
 
-- `enableDnsSupport` — vpc resolver at `VPC_CIDR + 2` (e.g. `10.0.0.2`)
-- `enableDnsHostnames` — instances get internal dns names
+```shell
+lekture serve presentation.md
+ssh localhost -p 53531
+```
 
-### route 53 resolver (hybrid)
+- **serve** presents the deck over ssh. everyone connected sees your edits when you save
+- nobody has to log in, so served decks cannot run code unless you pass `--allow-exec`
 
-- **inbound** — on-prem forwards queries into your aws zones
-- **outbound** — vpc forwards `corp.internal` to your dc
-- **resolver rules** — map suffixes to dns servers, share via ram
+```shell
+lekture export presentation.md --output deck.html
+lekture dump presentation.md | less -R
+```
+
+- **export** writes one html file with everything inside it. arrow keys move through it
+- **dump** prints every slide to the terminal, for a pipe or a diff
 
 ---
 
 # thank you
 
-### aws networking deep dive
+### lekture
 
-![levi van noort](image.png)
-
-vpc · security · load balancing · cdn · dns
+- install it with `brew install kontrolplane/tap/lekture`
+- the source is at `github.com/kontrolplane/lekture`
+- two more decks to run: `example/kubernetes.md` and `example/helm.md`

@@ -75,37 +75,40 @@ func heading(md string) string {
 func TestScreenshotTapeLandsOnIntendedSlides(t *testing.T) {
 	m, d := exampleModel(t)
 
-	// Screenshot 1: the agenda, partly revealed.
+	// Screenshot 1: the overview of the deck, partly revealed.
 	m = press(t, m, "Right")
 	m = press(t, m, "Right")
-	if got := heading(d.Slides[slideOf(t, m)].RawMarkdown); got != "agenda" {
-		t.Errorf("reveal.png would capture %q, want the agenda", got)
+	if got := heading(d.Slides[slideOf(t, m)].RawMarkdown); got != "what this deck covers" {
+		t.Errorf("reveal.png would capture %q, want \"what this deck covers\"", got)
 	}
 	if view := m.View(); !strings.Contains(view, "(2/3)") {
 		t.Errorf("reveal.png should show a partial reveal counter")
 	}
-	if view := m.View(); strings.Contains(view, "reference architecture") {
+	if view := m.View(); strings.Contains(view, "configuring") {
 		t.Error("reveal.png should not show the final reveal's content")
 	}
 
-	// Screenshot 2: slide overview.
+	// Screenshot 2: slide overview. One press finishes the reveals, one
+	// passes "a deck is one markdown file", one lands on the slide.
 	m = press(t, m, "Right")
 	m = press(t, m, "Right")
 	m = press(t, m, "Right")
-	if got := heading(d.Slides[slideOf(t, m)].RawMarkdown); got != "what is a vpc?" {
-		t.Errorf("overview.png would capture %q, want \"what is a vpc?\"", got)
+	if got := heading(d.Slides[slideOf(t, m)].RawMarkdown); got != "what a slide can hold" {
+		t.Errorf("overview.png would capture %q, want \"what a slide can hold\"", got)
 	}
 
-	// Screenshot 3: the code block slide.
-	for i := 0; i < 4; i++ {
+	// Screenshot 3: the code block slide. One press shows "images", three
+	// walk the reveals of "revealing a slide in stages", the fifth lands on
+	// the slide.
+	for i := 0; i < 5; i++ {
 		m = press(t, m, "Right")
 	}
 	idx := slideOf(t, m)
-	if got := heading(d.Slides[idx].RawMarkdown); got != "vpc-attached lambda" {
-		t.Fatalf("code-block.png would capture %q, want \"vpc-attached lambda\"", got)
+	if got := heading(d.Slides[idx].RawMarkdown); got != "running code" {
+		t.Fatalf("code-block.png would capture %q, want \"running code\"", got)
 	}
 	if n := len(d.Slides[idx].CodeBlocks); n != 2 {
-		t.Errorf("the lambda slide has %d code blocks, want 2 so Tab has something to select", n)
+		t.Errorf("the code slide has %d code blocks, want 2 so Tab has something to select", n)
 	}
 	if d.Slides[idx].CodeBlocks[0].Language != "go" {
 		t.Errorf("first block is %q, want go — Ctrl+E runs it for code-execution.png",
